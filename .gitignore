@@ -1,3 +1,5 @@
 venv/
 packages/sparsechem-master/
 .idea/
+data/*.csv
+data/*.mtx
