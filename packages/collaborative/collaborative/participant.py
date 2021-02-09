@@ -14,27 +14,32 @@ class Participant:
                  sampler=None,
                  loss=None,
                  optimizer=None,
+                 scheduler=None,
                  dev="cpu"):
         self.model = model.to(dev)
         self.conf = conf
         self.loss = loss
         self.optimizer = optimizer
+        self.scheduler = scheduler
         # create loader
         if sampler is not None:
-            ## data loader with custom sampler
-            self.data_loader = DataLoader(dataset, sampler=sampler, batch_size=conf.batch_size, num_workers=0,
-                                          collate_fn=sc.sparse_collate, drop_last=False)
+            if dataset:
+                ## data loader with custom sampler
+                self.data_loader = DataLoader(dataset, sampler=sampler, batch_size=conf.batch_size, num_workers=0,
+                                              collate_fn=sc.sparse_collate, drop_last=False)
             if dataset_va:
                 self.data_loader_va = DataLoader(dataset_va, sampler=sampler, batch_size=conf.batch_size, num_workers=0,
                                                  collate_fn=sc.sparse_collate, drop_last=False)
         else:
-            ## data loader without custom sampler
-            self.data_loader = DataLoader(dataset, batch_size=conf.batch_size, num_workers=0,
-                                          collate_fn=sc.sparse_collate, shuffle=True, drop_last=False)
+            if dataset:
+                ## data loader without custom sampler
+                self.data_loader = DataLoader(dataset, batch_size=conf.batch_size, num_workers=0,
+                                              collate_fn=sc.sparse_collate, shuffle=True, drop_last=False)
             if dataset_va:
                 self.data_loader_va = DataLoader(dataset_va, batch_size=conf.batch_size, num_workers=0,
                                                  collate_fn=sc.sparse_collate, drop_last=False)
-        self.cyclic_loader = it.cycle(iter(self.data_loader))
+        if dataset:
+            self.cyclic_loader = it.cycle(iter(self.data_loader))
         self.loss = torch.nn.BCEWithLogitsLoss(reduction="none") if loss is None else loss
         self.dev = dev
 
@@ -77,7 +82,7 @@ class Participant:
                 raise RuntimeWarning("There is no validation dataset to evaluate on. Skipping evaluation.")
             else:
                 results = sc.evaluate_binary(self.model, self.data_loader_va, self.loss, self.dev)
-        aucs = results["aucs"].mean()
+        aucs = results["metrics"]["roc_auc_score"].mean()
         print(
             f"\tloss={results['logloss']:.5f}\taucs={aucs:.5f}")
 
@@ -85,6 +90,7 @@ class Participant:
 
     def update_weights(self):
         self.optimizer.step()
+        self.scheduler.step()
 
     def zero_grad(self):
         self.optimizer.zero_grad()
@@ -114,18 +120,22 @@ class Participant:
 
 
 class Server(Participant):
-    def __init__(self, model, conf, dataset, sampler=None, loss=None):
+    def __init__(self, model, conf, dataset=None, sampler=None, loss=None):
+        lr_steps = [s * 50 for s in conf.lr_steps]
         # set trunk optimizer
         optimizer = torch.optim.Adam(model.trunk.parameters(), lr=conf.lr, weight_decay=conf.weight_decay)
-        super().__init__(model=model, conf=conf, dataset=dataset, sampler=sampler, loss=loss, optimizer=optimizer)
+        scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=lr_steps, gamma=conf.lr_alpha)
+        super().__init__(model=model, conf=conf, dataset=dataset, sampler=sampler, loss=loss, optimizer=optimizer, scheduler=scheduler)
 
 
 class Client(Participant):
     def __init__(self, model, conf, dataset, dataset_va=None, sampler=None, loss=None):
+        lr_steps = [s * 50 for s in conf.lr_steps]
         # set head optimizer
         optimizer = torch.optim.Adam(model.head.parameters(), lr=conf.lr, weight_decay=conf.weight_decay)
+        scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=lr_steps, gamma=conf.lr_alpha)
         super().__init__(model=model, conf=conf, dataset=dataset, dataset_va=dataset_va, sampler=sampler, loss=loss,
-                         optimizer=optimizer)
+                         optimizer=optimizer, scheduler=scheduler)
 
     def save_client_model(self, path, filename="model.pkl"):
         with open(path + filename, "wb") as f:
