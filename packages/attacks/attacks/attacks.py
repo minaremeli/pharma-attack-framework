@@ -12,6 +12,7 @@ from sklearn.model_selection import train_test_split
 from sklearn.metrics import confusion_matrix, recall_score, precision_score, accuracy_score
 import numpy as np
 import torch
+import scipy.sparse as sparse
 
 
 def sparse_to_tensor(mtx):
@@ -84,6 +85,14 @@ class BaseAttack:
             # client zeroes his head
             client.zero_grad()
 
+    def _evaluate(self, predictions, true_labels):
+        tn, fp, fn, tp = confusion_matrix(predictions, true_labels).ravel()
+        self.results_dict["TN"], self.results_dict["FP"], self.results_dict["FN"], self.results_dict[
+            "TP"] = tn, fp, fn, tp
+        self.results_dict["accuracy"] = accuracy_score(predictions, true_labels)
+        self.results_dict["precision"] = precision_score(predictions, true_labels)
+        self.results_dict["recall"] = recall_score(predictions, true_labels)
+
 
 class TrunkActivationAttack(BaseAttack):
     def __init__(self, attack_config, model_config, results_path):
@@ -111,13 +120,8 @@ class TrunkActivationAttack(BaseAttack):
         atk.fit(X_train, y_train)
 
         y_pred = atk.predict(X_test)
-        tn, fp, fn, tp = confusion_matrix(y_test, y_pred).ravel()
 
-        self.results_dict["TN"], self.results_dict["FP"], self.results_dict["FN"], self.results_dict[
-            "TP"] = tn, fp, fn, tp
-        self.results_dict["accuracy"] = accuracy_score(y_pred, y_test)
-        self.results_dict["precision"] = precision_score(y_pred, y_test)
-        self.results_dict["recall"] = recall_score(y_pred, y_test)
+        self._evaluate(y_pred, y_test)
 
         print("Attack results:")
         print(self.results_dict)
@@ -155,8 +159,74 @@ class NGMAttack(BaseAttack):
         print("Naive Gradient Attack")
         trunk, server, clients = self._initialize_and_train_targeted_model()
 
-        num_attacks = self.attack_config.num_attacks
-        for i in tqdm(range(num_attacks)):
+        num_samples = self.attack_config.num_samples
+
+        # collect predictions on "positive" samples
+        predictions_on_positive_samples = []
+        for _ in tqdm(range(num_samples)):
+            x_member = self._train_clients_collect_batches(clients)
+
+            sample = du.get_random_sample(x_member)
+            sample = sparse.csr_matrix(sample.to_dense().numpy())
+            trunk_weight_gradient = sparse.csr_matrix( server.get_gradients("trunk.net_freq")[0].flatten() )
+            trunk_hidden_size = self.model_config.hidden_sizes[0]
+            prediction = self._naive_majority_vote_attack(sample, trunk_weight_gradient, trunk_hidden_size)
+            predictions_on_positive_samples.append(prediction)
+
+            # delete trunk gradient
+            server.zero_grad()
+
+        _, _, x_non_member, _ = du.load_member_non_member_data("data", range(10))
+        # collect predictions on "negative" samples
+        predictions_on_negative_samples = []
+        for _ in tqdm(range(num_samples)):
             self._train_clients(clients)
 
+            sample = du.get_random_sample(x_non_member)
+            trunk_weight_gradient = sparse.csr_matrix(server.get_gradients("trunk.net_freq")[0].flatten() )
+            trunk_hidden_size = self.model_config.hidden_sizes[0]
+            prediction = self._naive_majority_vote_attack(sample, trunk_weight_gradient, trunk_hidden_size)
+            predictions_on_negative_samples.append(prediction)
+
+            # delete trunk gradient
+            server.zero_grad()
+
+        predictions = np.array(predictions_on_positive_samples + predictions_on_negative_samples)
+        true_labels = np.array(num_samples * [1] + num_samples * [0])
+
+        self._evaluate(predictions, true_labels)
+
+        print("Attack results:")
+        print(self.results_dict)
+
+    def _naive_majority_vote_attack(self, sample, grad, hidden_size):
+        nnz_indices = sample.indices
+        target_is_in = True
+        for nnz_index in nnz_indices:
+            nnz_set = set([nnz_index * hidden_size + i for i in range(hidden_size)])
+            gradient_indices_set = set(grad.indices)
+            num_matches = len(nnz_set & gradient_indices_set)
+            if num_matches < hidden_size // 2:
+                target_is_in = False
+                break
+        return target_is_in
+
+    def _train_clients_collect_batches(self, clients):
+        batches = []
+        for i, client in enumerate(clients):
+            # client gets his next batch
+            batch = client.get_next_batch()
+            x = torch.sparse_coo_tensor(
+                batch["x_ind"],
+                batch["x_data"],
+                size=[batch["batch_size"], self.model_config.input_size])
+            batches.append(x)
+            # client calculates updates for trunk+head on that batch
+            client.train(batch)
+            # client updates his head
+            client.update_weights()
+            # client zeroes his head
+            client.zero_grad()
+
+        return torch.cat(batches, dim=0)
 

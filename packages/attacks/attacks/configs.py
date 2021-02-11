@@ -30,3 +30,10 @@ class TrunkActivationAttackConfig:
                             help="Number of estimators used to train the RandomForestModel. Default is 100.", type=int,
                             default=100)
         parser.parse_known_args(namespace=self)
+
+
+class NGMAttackConfig:
+    def __init__(self, parser):
+        parser.add_argument("--num_samples", help="Number of member and non-member samples that the attacker collects "
+                                                  "for evaluating her attack.", type=int, default=50)
+        parser.parse_known_args(namespace=self)

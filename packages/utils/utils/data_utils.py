@@ -1,3 +1,5 @@
+import random
+
 import scipy.io
 import numpy as np
 from os import path
@@ -60,3 +62,9 @@ def load_member_non_member_data(rel_path, partners_idx=[]):
     x_non_member, y_non_member = X[non_member_indices], Y[non_member_indices]
 
     return x_member, y_member, x_non_member, y_non_member
+
+
+def get_random_sample(X_data):
+    rand_int = random.randrange(X_data.shape[0])
+    return X_data[rand_int]
+

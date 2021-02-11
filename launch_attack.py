@@ -1,5 +1,5 @@
 import argparse
-from attacks.configs import ModelConfig, TrunkActivationAttackConfig
+from attacks.configs import ModelConfig, TrunkActivationAttackConfig, NGMAttackConfig
 from attacks import NGMAttack, TrunkActivationAttack
 
 class AttackLauncher():
@@ -14,15 +14,15 @@ class AttackLauncher():
         model_config_parser = subparsers.add_parser('model_config', help="Training a multi-task model.")
         attack_config_parser = subparsers.add_parser('attack_parser', help="Attack arguments")
 
+        run_config = ModelConfig(model_config_parser)
         if self.attack_name == "TrunkActivation":
-            run_config = ModelConfig(model_config_parser)
             attack_config = TrunkActivationAttackConfig(attack_config_parser)
-
             attack = TrunkActivationAttack(attack_config, run_config, results_path="test_results.csv")
-
-            attack.run_attack()
-
-            attack.log_results()
+        else:
+            attack_config = NGMAttackConfig(attack_config_parser)
+            attack = NGMAttack(attack_config, run_config, results_path="test_results2.csv")
+        attack.run_attack()
+        attack.log_results()
 
 
 if __name__ == '__main__':
