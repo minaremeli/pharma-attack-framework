@@ -7,6 +7,8 @@ class AttackLauncher():
         parser = argparse.ArgumentParser(description="Launching an attack against a federated run.")
         parser.add_argument("--attack_name", help="The name of the attack you want to launch.", required=True, type=str,
                             choices=["NGMA", "TrunkActivation"])
+        parser.add_argument("--results_file", help="Name of the .csv file you want to save your results in. New results "
+                                                "will be appended. Example: results.csv", required=True, type=str)
 
         parser.parse_known_args(namespace=self)
 
@@ -17,10 +19,10 @@ class AttackLauncher():
         run_config = ModelConfig(model_config_parser)
         if self.attack_name == "TrunkActivation":
             attack_config = TrunkActivationAttackConfig(attack_config_parser)
-            attack = TrunkActivationAttack(attack_config, run_config, results_path="test_results.csv")
+            attack = TrunkActivationAttack(attack_config, run_config, results_path=self.results_file)
         else:
             attack_config = NGMAttackConfig(attack_config_parser)
-            attack = NGMAttack(attack_config, run_config, results_path="test_results2.csv")
+            attack = NGMAttack(attack_config, run_config, results_path=self.results_file)
         attack.run_attack()
         attack.log_results()
 
