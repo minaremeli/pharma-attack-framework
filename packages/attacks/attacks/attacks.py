@@ -85,13 +85,23 @@ class BaseAttack:
             # client zeroes his head
             client.zero_grad()
 
-    def _evaluate(self, predictions, true_labels):
+    def _evaluate_attack(self, predictions, true_labels):
         tn, fp, fn, tp = confusion_matrix(predictions, true_labels).ravel()
         self.results_dict["TN"], self.results_dict["FP"], self.results_dict["FN"], self.results_dict[
             "TP"] = tn, fp, fn, tp
         self.results_dict["accuracy"] = accuracy_score(predictions, true_labels)
         self.results_dict["precision"] = precision_score(predictions, true_labels)
         self.results_dict["recall"] = recall_score(predictions, true_labels)
+
+    def _evaluate_model(self, clients):
+        auc_prs = []
+        loglosses = []
+        for client in clients:
+            loss, auc_pr = client.eval(on_train=True)
+            auc_prs.append(auc_pr)
+            loglosses.append(loss)
+        self.results_dict["model_avg_auc_pr"] = np.mean(auc_prs)
+        self.results_dict["model_avg_logloss"] = np.mean(loglosses)
 
 
 class TrunkActivationAttack(BaseAttack):
@@ -121,7 +131,8 @@ class TrunkActivationAttack(BaseAttack):
 
         y_pred = atk.predict(X_test)
 
-        self._evaluate(y_pred, y_test)
+        self._evaluate_model(clients)
+        self._evaluate_attack(y_pred, y_test)
 
         print("Attack results:")
         print(self.results_dict)
@@ -194,7 +205,8 @@ class NGMAttack(BaseAttack):
         predictions = np.array(predictions_on_positive_samples + predictions_on_negative_samples)
         true_labels = np.array(num_samples * [1] + num_samples * [0])
 
-        self._evaluate(predictions, true_labels)
+        self._evaluate_model(clients)
+        self._evaluate_attack(predictions, true_labels)
 
         print("Attack results:")
         print(self.results_dict)

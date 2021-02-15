@@ -82,9 +82,9 @@ class Participant:
                 raise RuntimeWarning("There is no validation dataset to evaluate on. Skipping evaluation.")
             else:
                 results = sc.evaluate_binary(self.model, self.data_loader_va, self.loss, self.dev)
-        aucs = results["metrics"]["roc_auc_score"].mean()
+        aucs = results["metrics"]["auc_pr"].mean()
         print(
-            f"\tloss={results['logloss']:.5f}\taucs={aucs:.5f}")
+            f"\tloss={results['logloss']:.5f}\tauc_pr={aucs:.5f}")
 
         return results['logloss'], aucs
 
