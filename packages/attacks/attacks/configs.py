@@ -37,3 +37,9 @@ class NGMAttackConfig:
         parser.add_argument("--num_samples", help="Number of member and non-member samples that the attacker collects "
                                                   "for evaluating her attack.", type=int, default=50)
         parser.parse_known_args(namespace=self)
+
+class LeavingAttackConfig:
+    def __init__(self, parser):
+        parser.add_argument("--num_epochs", help="Number of epochs that the attacker tests his hypothesis on. One "
+                                                 "epoch is equal to 50 rounds.", type=int, default=30)
+        parser.parse_known_args(namespace=self)

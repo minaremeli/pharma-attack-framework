@@ -1,3 +1,3 @@
 name="attacks"
-from .attacks import NGMAttack, TrunkActivationAttack, BaseAttack
-from .configs import ModelConfig, TrunkActivationAttackConfig
+from .attacks import NGMAttack, TrunkActivationAttack, BaseAttack, LeavingAttack
+from .configs import ModelConfig, TrunkActivationAttackConfig, LeavingAttackConfig

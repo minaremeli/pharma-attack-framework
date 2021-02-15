@@ -13,6 +13,7 @@ from sklearn.metrics import confusion_matrix, recall_score, precision_score, acc
 import numpy as np
 import torch
 import scipy.sparse as sparse
+import scipy.stats as stat
 
 
 def sparse_to_tensor(mtx):
@@ -86,12 +87,12 @@ class BaseAttack:
             client.zero_grad()
 
     def _evaluate_attack(self, predictions, true_labels):
-        tn, fp, fn, tp = confusion_matrix(predictions, true_labels).ravel()
+        tn, fp, fn, tp = confusion_matrix(true_labels, predictions).ravel()
         self.results_dict["TN"], self.results_dict["FP"], self.results_dict["FN"], self.results_dict[
             "TP"] = tn, fp, fn, tp
-        self.results_dict["accuracy"] = accuracy_score(predictions, true_labels)
-        self.results_dict["precision"] = precision_score(predictions, true_labels)
-        self.results_dict["recall"] = recall_score(predictions, true_labels)
+        self.results_dict["accuracy"] = accuracy_score(true_labels, predictions)
+        self.results_dict["precision"] = precision_score(true_labels, predictions)
+        self.results_dict["recall"] = recall_score(true_labels, predictions)
 
     def _evaluate_model(self, clients):
         auc_prs = []
@@ -179,7 +180,7 @@ class NGMAttack(BaseAttack):
 
             sample = du.get_random_sample(x_member)
             sample = sparse.csr_matrix(sample.to_dense().numpy())
-            trunk_weight_gradient = sparse.csr_matrix( server.get_gradients("trunk.net_freq")[0].flatten() )
+            trunk_weight_gradient = sparse.csr_matrix(server.get_gradients("trunk.net_freq")[0].flatten())
             trunk_hidden_size = self.model_config.hidden_sizes[0]
             prediction = self._naive_majority_vote_attack(sample, trunk_weight_gradient, trunk_hidden_size)
             predictions_on_positive_samples.append(prediction)
@@ -194,7 +195,7 @@ class NGMAttack(BaseAttack):
             self._train_clients(clients)
 
             sample = du.get_random_sample(x_non_member)
-            trunk_weight_gradient = sparse.csr_matrix(server.get_gradients("trunk.net_freq")[0].flatten() )
+            trunk_weight_gradient = sparse.csr_matrix(server.get_gradients("trunk.net_freq")[0].flatten())
             trunk_hidden_size = self.model_config.hidden_sizes[0]
             prediction = self._naive_majority_vote_attack(sample, trunk_weight_gradient, trunk_hidden_size)
             predictions_on_negative_samples.append(prediction)
@@ -215,13 +216,12 @@ class NGMAttack(BaseAttack):
         nnz_indices = sample.indices
         target_is_in = True
         for nnz_index in nnz_indices:
-            nnz_set = set([nnz_index * hidden_size + i for i in range(hidden_size)])
-            gradient_indices_set = set(grad.indices)
-            num_matches = len(nnz_set & gradient_indices_set)
+            nnz_set = set({nnz_index * hidden_size + i for i in range(hidden_size)})
+            num_matches = len(nnz_set.intersection(grad.indices))
             if num_matches < hidden_size // 2:
                 target_is_in = False
                 break
-        return target_is_in
+        return int(target_is_in)
 
     def _train_clients_collect_batches(self, clients):
         batches = []
@@ -241,4 +241,90 @@ class NGMAttack(BaseAttack):
             client.zero_grad()
 
         return torch.cat(batches, dim=0)
+
+
+class LeavingAttack(BaseAttack):
+    def __init__(self, attack_config, model_config, results_path):
+        super().__init__(attack_config, model_config, results_path)
+
+    def run_attack(self):
+        print("Leaving / N-1 Attack")
+        trunk, server, clients = self._initialize_and_train_targeted_model()
+
+        num_epochs = self.attack_config.num_epochs
+
+        leaving_partner_idx = 0
+        x_leaving_partner, _ = du.load_partner_data("data", [leaving_partner_idx])[0]
+        print(x_leaving_partner.shape)
+        sample = du.get_random_sample(x_leaving_partner)
+
+        # rounds where all clients train together
+        together = []
+        for _ in tqdm(range(num_epochs*50)):
+            self._train_clients(clients)
+
+            trunk_weight_gradient = sparse.csr_matrix(server.get_gradients("trunk.net_freq")[0].flatten())
+            trunk_hidden_size = self.model_config.hidden_sizes[0]
+            prediction = self._naive_gradient_attack(sample, trunk_weight_gradient, trunk_hidden_size)
+            together.append(prediction)
+
+            # delete trunk gradient
+            server.zero_grad()
+        together = np.array(together)
+        print(together)
+
+        # rounds where all BUT the first client train together
+        alone = []
+        for _ in tqdm(range(num_epochs*50)):
+            self._train_clients(clients[1:])
+
+            trunk_weight_gradient = sparse.csr_matrix(server.get_gradients("trunk.net_freq")[0].flatten())
+            trunk_hidden_size = self.model_config.hidden_sizes[0]
+            prediction = self._naive_gradient_attack(sample, trunk_weight_gradient, trunk_hidden_size)
+            alone.append(prediction)
+
+            # delete trunk gradient
+            server.zero_grad()
+        alone = np.array(alone)
+        print(alone)
+
+        pos_epochs_alone = 0
+        pos_epochs_together = 0
+
+        for k in range(num_epochs):
+            if len(alone[k * 50:(k + 1) * 50].nonzero()[0]) > 0:
+                pos_epochs_alone += 1
+            if len(together[k * 50:(k + 1) * 50].nonzero()[0]) > 0:
+                pos_epochs_together += 1
+
+        print("Total number of epochs in both cases: ", num_epochs)
+        print("Number of positive epochs in together: ", pos_epochs_together)
+        print("Number of positive epochs in alone: ", pos_epochs_alone)
+        freq_pos_epochs_together = pos_epochs_together / num_epochs
+        print("Frequency of positive epochs when together: ", freq_pos_epochs_together)
+
+        result = stat.binom_test(pos_epochs_alone, num_epochs, p=freq_pos_epochs_together, alternative="two-sided")
+
+        print("Probability of the two samples coming from the same distribution: %.8f" % result)
+
+        self._evaluate_model(clients)
+        self.results_dict["pos_epochs_together"] = pos_epochs_together
+        self.results_dict["pos_epochs_left"] = pos_epochs_alone
+        self.results_dict["p"] = result
+
+    def _naive_gradient_attack(self, sample, grad, hidden_size):
+        nnz_indices = sample.indices
+        target_is_in = True
+        for nnz_index in nnz_indices:
+            nnz_set = set({nnz_index * hidden_size + i for i in range(hidden_size)})
+            num_matches = len(nnz_set.intersection(grad.indices))
+            if num_matches != hidden_size:
+                target_is_in = False
+                break
+        return int(target_is_in)
+
+
+
+
+
 

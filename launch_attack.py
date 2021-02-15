@@ -1,6 +1,6 @@
 import argparse
-from attacks.configs import ModelConfig, TrunkActivationAttackConfig, NGMAttackConfig
-from attacks import NGMAttack, TrunkActivationAttack, BaseAttack
+from attacks.configs import ModelConfig, TrunkActivationAttackConfig, NGMAttackConfig, LeavingAttackConfig
+from attacks import NGMAttack, TrunkActivationAttack, BaseAttack, LeavingAttack
 import torch
 import random
 import numpy as np
@@ -9,7 +9,7 @@ class AttackLauncher():
     def __init__(self):
         parser = argparse.ArgumentParser(description="Launching an attack against a federated run.")
         parser.add_argument("--attack_name", help="The name of the attack you want to launch.", required=True, type=str,
-                            choices=["NGMA", "TrunkActivation", "NOATTACK"])
+                            choices=["NGMA", "TrunkActivation", "NOATTACK", "Leaving"])
         parser.add_argument("--results_file", help="Name of the .csv file you want to save your results in. New results "
                                                 "will be appended. Example: results.csv", required=True, type=str)
         parser.add_argument("--seed", help="Set a seed for running the attack and training the model.", required=True, type=int)
@@ -27,6 +27,7 @@ class AttackLauncher():
         attack_config_parser = subparsers.add_parser('attack_parser', help="Attack arguments")
 
         run_config = ModelConfig(model_config_parser)
+        run_config.seed = self.seed
         if self.attack_name == "NOATTACK":
             attack_config = TrunkActivationAttackConfig(attack_config_parser)
             attack_config.__dict__ = {}
@@ -38,9 +39,12 @@ class AttackLauncher():
             if self.attack_name == "TrunkActivation":
                 attack_config = TrunkActivationAttackConfig(attack_config_parser)
                 attack = TrunkActivationAttack(attack_config, run_config, results_path=self.results_file)
-            else:
+            elif self.attack_name == "NGMA":
                 attack_config = NGMAttackConfig(attack_config_parser)
                 attack = NGMAttack(attack_config, run_config, results_path=self.results_file)
+            else:
+                attack_config = LeavingAttackConfig(attack_config_parser)
+                attack = LeavingAttack(attack_config, run_config, results_path=self.results_file)
             attack.run_attack()
             attack.log_results()
 
