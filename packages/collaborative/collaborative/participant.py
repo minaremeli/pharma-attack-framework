@@ -64,7 +64,7 @@ class Participant:
         yhat = yhat_all[y_ind[0], y_ind[1]]
 
         ## average loss of data
-        output = self.loss(yhat, y_data).sum()
+        output = self.loss(yhat, y_data).sum() / 5000
         ## average loss on one data point
         output_n = output / b["batch_size"]
 
