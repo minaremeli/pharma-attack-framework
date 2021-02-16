@@ -24,7 +24,7 @@ Some parameters that need to be set in order to run an attack.
 * `--seed`: Sets a seed for running the attack and training the model.
 
 #### Example:
-`python launch-attack.py --attack_name NGMA --results_file ngma_results.csv --seed 42 --num_samples 100`
+`python launch_attack.py --attack_name NGMA --results_file ngma_results.csv --seed 42 --num_samples 100`
 
 ### Model parameter default values
 The default values for the model parameters have been set to match the Y1 run.
