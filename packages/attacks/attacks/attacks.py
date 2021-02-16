@@ -213,12 +213,13 @@ class NGMAttack(BaseAttack):
         print(self.results_dict)
 
     def _naive_majority_vote_attack(self, sample, grad, hidden_size):
+        voting_threshold = self.attack_config["voting_threshold"]
         nnz_indices = sample.indices
         target_is_in = True
         for nnz_index in nnz_indices:
             nnz_set = set({nnz_index * hidden_size + i for i in range(hidden_size)})
             num_matches = len(nnz_set.intersection(grad.indices))
-            if num_matches < hidden_size // 2:
+            if num_matches < int(hidden_size * voting_threshold):
                 target_is_in = False
                 break
         return int(target_is_in)

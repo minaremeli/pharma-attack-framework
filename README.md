@@ -65,7 +65,8 @@ The attack exploits the input's unique fingerprint, which is reflected in the gr
 It uses a majority voting scheme to determine whether a certain compound was used in a particular round.
 #### Parameters
 * `--num_samples`: Number of member and non-member samples that the attacker collects for training and evaluating her attack.
-  It takes 30 seconds to evaluate one sample. Default is 50.
+  It takes 30-50 seconds to evaluate one sample. Default value is 50.
+* `--voting_threshold`: The fraction of gradients connected to a non-zero input that need to be non-zero. Affects attack precision. Usually a higher threshold means higher precision (higher confidence in positive predictions). Default value is 0.5.
 #### Evaluation
 * TP, FP, TN, FN
 * accuracy

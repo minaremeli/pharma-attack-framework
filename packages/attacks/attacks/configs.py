@@ -36,6 +36,10 @@ class NGMAttackConfig:
     def __init__(self, parser):
         parser.add_argument("--num_samples", help="Number of member and non-member samples that the attacker collects "
                                                   "for evaluating her attack.", type=int, default=50)
+        parser.add_argument("--voting_threshold", help="The fraction of gradients connected to a non-zero input that "
+                                                       "need to be non-zero. Affects attack precision. Usually a "
+                                                       "higher threshold means higher precision (higher confidence in "
+                                                       "positive predictions).", type=float, default=0.5)
         parser.parse_known_args(namespace=self)
 
 class LeavingAttackConfig:
