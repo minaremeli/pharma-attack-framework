@@ -20,3 +20,8 @@ Install: `pip install -e collaborative`
 A utils package mainly for loading data.
 
 Install: `pip install -e utils`
+
+## Intersect Cython
+A library written in c++ for finding the intersection of two ordered lists with unique elements.
+
+Install: `pip install -e intersect_cython`
