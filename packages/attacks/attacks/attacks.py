@@ -14,7 +14,7 @@ import numpy as np
 import torch
 import scipy.sparse as sparse
 import scipy.stats as stat
-
+from pyintersect import intersect
 
 def sparse_to_tensor(mtx):
     return torch.FloatTensor(mtx.toarray())
@@ -217,8 +217,10 @@ class NGMAttack(BaseAttack):
         nnz_indices = sample.indices
         target_is_in = True
         for nnz_index in nnz_indices:
-            nnz_set = set({nnz_index * hidden_size + i for i in range(hidden_size)})
-            num_matches = len(nnz_set.intersection(grad.indices))
+            nnz = np.array([int(nnz_index * hidden_size + i) for i in range(hidden_size)], dtype=np.uint32)
+            grad_nnz = grad.indices.astype(np.uint32)
+            # second parameter of intersect needs to be the larger array!
+            num_matches = len(intersect(nnz, grad_nnz))
             if num_matches < int(hidden_size * voting_threshold):
                 target_is_in = False
                 break
