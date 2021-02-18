@@ -11,6 +11,8 @@ class ModelConfig:
         parser.add_argument("--weight_decay", help="Weight decay", type=float, default=1e-6)
         parser.add_argument("--last_non_linearity", help="Last layer non-linearity", type=str, default="relu",
                             choices=["relu", "tanh"])
+        parser.add_argument("--middle_non_linearity", help="MIddle layer non-linearity", type=str, default="relu", 
+                            choices=["relu", "tanh"])
         parser.add_argument("--non_linearity", help="Before last layer non-linearity", type=str, default="relu",
                             choices=["relu", "tanh"])
         parser.add_argument("--input_transform", help="Transformation to apply to inputs", type=str, default="binarize",
