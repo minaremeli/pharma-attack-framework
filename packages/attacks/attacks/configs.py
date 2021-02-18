@@ -6,7 +6,7 @@ class ModelConfig:
         parser.add_argument("--rounds", help="How many rounds should the model train for.", type=int, default=1000)
         parser.add_argument("--input_size", help="Size of input.", type=int, default=32000)
         parser.add_argument("--hidden_sizes", nargs="+", help="Hidden sizes", default=[6000], type=int)
-        parser.add_argument("--middle_dropout", help="Dropout for layers before the last", type=float, default=0.0)
+        parser.add_argument("--middle_dropout", help="Dropout for layers before the last", type=float, default=0.2)
         parser.add_argument("--last_dropout", help="Last dropout", type=float, default=0.2)
         parser.add_argument("--weight_decay", help="Weight decay", type=float, default=1e-6)
         parser.add_argument("--last_non_linearity", help="Last layer non-linearity", type=str, default="relu",
