@@ -23,9 +23,23 @@ Some parameters that need to be set in order to run an attack.
 
 * `--seed`: Sets a seed for running the attack and training the model.
 
-#### Example:
-`python launch_attack.py --attack_name NGMA --results_file ngma_results.csv --seed 42 --num_samples 100`
+* `--model_save`: Whether or not the trained model should be saved. Possible values: `['yes', 'true', 't', 'y', '1']` and `['no', 'false', 'f', 'n', '0']`.
+* `--model_save_path`: Specifies the path where the server and client models (+model config) should  be saved / should be loaded from. Default value is `None`.
 
+#### Examples:
+An example where the trained model is not saved for later atacks:
+
+`python launch_attack.py --attack_name NGMA --results_file ngma_results.csv --model_save no --seed 42 --num_samples 100`
+
+An example where we save the trained model for later attacks (in `trained_models/` subdirectory - this is created automatically):
+
+`python launch_attack.py --attack_name NGMA --results_file ngma_results.csv --model_save yes --model_save_path trained_models/ --seed 42 --num_samples 100`
+
+An example where we load the trained model for an attack (from `trained_models/`), and launch the attack with a different seed:
+
+`python launch_attack.py --attack_name NGMA --results_file ngma_results.csv --model_save no --model_save_path trained_models/ --seed 89 --num_samples 100`
+
+*Note*: When loading an already saved model, there is no use in setting ModelConfig parameters, such as `--hidden_sizes` or `--rounds` because they will be overwritten with the loaded model's.
 ### Model parameter default values
 The default values for the model parameters have been set to match the Y1 run.
 * **rounds**: 1000

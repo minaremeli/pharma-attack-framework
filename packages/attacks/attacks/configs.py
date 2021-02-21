@@ -1,5 +1,4 @@
-import argparse
-
+from json import JSONEncoder
 
 class ModelConfig:
     def __init__(self, parser):
@@ -22,6 +21,19 @@ class ModelConfig:
         parser.add_argument("--lr_steps", nargs="+", help="Learning rate decay steps", type=int, default=[10])
         parser.add_argument("--input_size_freq", help="Number of high importance features", type=int, default=None)
         parser.parse_known_args(namespace=self)
+
+
+class ModelConfigEncoder(JSONEncoder):
+    """
+    A specialised JSONEncoder that encodes ModelConfig.
+    """
+
+    def default(self, obj):
+        if isinstance(obj, ModelConfig):
+            return obj.__dict__
+        else:
+            return JSONEncoder.default(self, obj)
+
 
 
 class TrunkActivationAttackConfig:

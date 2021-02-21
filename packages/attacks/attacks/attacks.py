@@ -15,18 +15,24 @@ import torch
 import scipy.sparse as sparse
 import scipy.stats as stat
 from pyintersect import intersect
+from os import path
+import json
+from .configs import ModelConfigEncoder
 
 def sparse_to_tensor(mtx):
     return torch.FloatTensor(mtx.toarray())
 
 
 class BaseAttack:
-    def __init__(self, attack_config, model_config, results_path):
+    def __init__(self, attack_config, model_config, results_path, load_saved_model, model_save, save_path):
         self.attack_config = attack_config
         self.model_config = model_config
         print(attack_config.__dict__)
 
         self.results_path = results_path
+        self.load_saved_model = load_saved_model
+        self.model_save = model_save
+        self.save_path = save_path
         self.results_dict = {}
 
     def run_attack(self):
@@ -43,13 +49,36 @@ class BaseAttack:
             writer.writerow(attack_model_results_dict)
 
     def _initialize_and_train_targeted_model(self):
-        print("Train targeted model...")
-        rounds = self.model_config.rounds
+        if self.load_saved_model:
+            print("Load model config")
+            with open(path.join(self.save_path, "model_config.json"), "r") as f:
+                attr_dict = json.load(f)
+                self.model_config.__dict__.update(attr_dict)
 
-        trunk = Trunk(self.model_config)
-        server = Server(trunk, conf=self.model_config)
-        clients = self._initialize_clients(trunk)
-        self._train_targeted_model(clients=clients, server=server, rounds=rounds)
+            print("Load saved models from %s" % self.save_path)
+            trunk = Trunk(self.model_config)
+            server = Server(trunk, conf=self.model_config)
+            server.load_model(path.join(self.save_path, "server"))
+            clients = self._initialize_clients(trunk)
+        else:
+            print("Train targeted model...")
+            rounds = self.model_config.rounds
+
+            trunk = Trunk(self.model_config)
+            server = Server(trunk, conf=self.model_config)
+            clients = self._initialize_clients(trunk)
+            self._train_targeted_model(clients=clients, server=server, rounds=rounds)
+            if self.model_save:
+                print("Saving trained models...")
+                server.save_model(path.join(self.save_path, "server"))
+                for i, c in enumerate(clients):
+                    c.save_model(path.join(self.save_path, str(i)))
+                print("Save model config...")
+                model_dict = {**self.model_config.__dict__}
+                # we don't want to overwrite the seed value after re-loading the model
+                del model_dict["seed"]
+                with open(path.join(self.save_path, "model_config.json"), "w") as f:
+                    json.dump(model_dict, f, cls=ModelConfigEncoder)
 
         return trunk, server, clients
 
@@ -64,6 +93,8 @@ class BaseAttack:
             print(model)
             dataset = sc.SparseDataset(x, y)
             client = Client(model, conf=self.model_config, dataset=dataset)
+            if self.load_saved_model:
+                client.load_model(path.join(self.save_path, str(i)))
             clients.append(client)
         return clients
 
@@ -106,9 +137,9 @@ class BaseAttack:
 
 
 class TrunkActivationAttack(BaseAttack):
-    def __init__(self, attack_config, model_config, results_path):
+    def __init__(self, attack_config, model_config, results_path, load_saved_model, model_save, save_path):
         print("Trunk Activation Attack")
-        super().__init__(attack_config, model_config, results_path)
+        super().__init__(attack_config, model_config, results_path, load_saved_model, model_save, save_path)
 
     def run_attack(self):
         trunk, server, clients = self._initialize_and_train_targeted_model()
@@ -164,8 +195,8 @@ class TrunkActivationAttack(BaseAttack):
 
 
 class NGMAttack(BaseAttack):
-    def __init__(self, attack_config, model_config, results_path):
-        super().__init__(attack_config, model_config, results_path)
+    def __init__(self, attack_config, model_config, results_path, load_saved_model, model_save, save_path):
+        super().__init__(attack_config, model_config, results_path, load_saved_model, model_save, save_path)
 
     def run_attack(self):
         print("Naive Gradient Attack")
@@ -247,8 +278,8 @@ class NGMAttack(BaseAttack):
 
 
 class LeavingAttack(BaseAttack):
-    def __init__(self, attack_config, model_config, results_path):
-        super().__init__(attack_config, model_config, results_path)
+    def __init__(self, attack_config, model_config, results_path, load_saved_model, model_save, save_path):
+        super().__init__(attack_config, model_config, results_path, load_saved_model, model_save, save_path)
 
     def run_attack(self):
         print("Leaving / N-1 Attack")

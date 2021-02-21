@@ -2,7 +2,8 @@ import torch
 import sparsechem as sc
 from torch.utils.data import DataLoader
 import itertools as it
-import pickle
+import os
+from os import path
 
 
 class Participant:
@@ -118,6 +119,15 @@ class Participant:
                 weights.append(weight)
         return weights
 
+    def save_model(self, save_path, filename="model.pkl"):
+        if not path.exists(save_path):
+            os.makedirs(save_path)
+        torch.save(self.model.state_dict(), path.join(save_path, filename))
+
+    def load_model(self, save_path, filename="model.pkl"):
+        state_dict = torch.load(path.join(save_path, filename))
+        self.model.load_state_dict(state_dict)
+
 
 class Server(Participant):
     def __init__(self, model, conf, dataset=None, sampler=None, loss=None):
@@ -136,10 +146,6 @@ class Client(Participant):
         scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=lr_steps, gamma=conf.lr_alpha)
         super().__init__(model=model, conf=conf, dataset=dataset, dataset_va=dataset_va, sampler=sampler, loss=loss,
                          optimizer=optimizer, scheduler=scheduler)
-
-    def save_client_model(self, path, filename="model.pkl"):
-        with open(path + filename, "wb") as f:
-            pickle.dump(self.model, f)
 
     def init_parameters(self):
         # this initializes the head parameters anew
