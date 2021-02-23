@@ -1,5 +1,5 @@
 import argparse
-from attacks.configs import ModelConfig, TrunkActivationAttackConfig, NGMAttackConfig, LeavingAttackConfig
+from attacks.configs import ModelConfig, TrunkActivationAttackConfig, NGMAttackConfig, LeavingAttackConfig, str2bool
 from attacks import NGMAttack, TrunkActivationAttack, BaseAttack, LeavingAttack
 import torch
 import random
@@ -63,17 +63,6 @@ class AttackLauncher():
                 attack = LeavingAttack(attack_config, run_config, results_path=self.results_file, load_saved_model=self.load_saved_model, model_save=self.model_save, save_path=self.model_save_path)
             attack.run_attack()
             attack.log_results()
-
-
-def str2bool(v):
-    if isinstance(v, bool):
-        return v
-    if v.lower() in ('yes', 'true', 't', 'y', '1'):
-        return True
-    elif v.lower() in ('no', 'false', 'f', 'n', '0'):
-        return False
-    else:
-        raise argparse.ArgumentTypeError('Boolean value expected.')
 
 
 if __name__ == '__main__':

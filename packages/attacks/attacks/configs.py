@@ -1,4 +1,15 @@
 from json import JSONEncoder
+import argparse
+
+def str2bool(v):
+    if isinstance(v, bool):
+        return v
+    if v.lower() in ('yes', 'true', 't', 'y', '1'):
+        return True
+    elif v.lower() in ('no', 'false', 'f', 'n', '0'):
+        return False
+    else:
+        raise argparse.ArgumentTypeError('Boolean value expected.')
 
 class ModelConfig:
     def __init__(self, parser):
@@ -20,6 +31,9 @@ class ModelConfig:
         parser.add_argument("--lr_alpha", help="Learning rate decay multiplier", type=float, default=0.3)
         parser.add_argument("--lr_steps", nargs="+", help="Learning rate decay steps", type=int, default=[10])
         parser.add_argument("--input_size_freq", help="Number of high importance features", type=int, default=None)
+        parser.add_argument("--uncertainty_weights", help="Whether or not to use uncertainty weighting. Possible "
+                                                          "values: ['yes', 'true', 't', 'y', '1'] and ['no', 'false',"
+                                                          " 'f', 'n', '0']", type=str2bool, default="no")
         parser.parse_known_args(namespace=self)
 
 
