@@ -72,8 +72,7 @@ bool match(const int* nnz_indices, int nn_size, const int* grad_nnz, int grad_si
         j = __frogadvanceUntilInt(grad_nnz, j, grad_size, nnz_indices[i] * hidden_size, hidden_size / 4);
 
         int k = 0;
-        for (; j + k < grad_size && grad_nnz[j + k] < (nnz_indices[i] + 1) * hidden_size 
-           && k < thres; k++);
+        for (; j + k < grad_size && grad_nnz[j + k] < (nnz_indices[i] + 1) * hidden_size && k < thres; k++);
             
         //int k = __frogadvanceUntilInt(grad_nnz, j, grad_size, (nnz_indices[i] + 1) * hidden_size, hidden_size / 2);
 

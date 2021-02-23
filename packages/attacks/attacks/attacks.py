@@ -228,9 +228,9 @@ class NGMAttack(BaseAttack):
             sample = sparse.csr_matrix(sample.to_dense().numpy())
             trunk_weight_gradient = sparse.csr_matrix(server.get_gradients("trunk.net_freq")[0].flatten())
             trunk_hidden_size = self.model_config.hidden_sizes[0]
-            #prediction = self._naive_majority_vote_attack(sample, trunk_weight_gradient, trunk_hidden_size)
+            prediction = self._naive_majority_vote_attack(sample, trunk_weight_gradient, trunk_hidden_size)
             #prediction = self._fast_naive_majority_vote_attack(sample, trunk_weight_gradient, trunk_hidden_size)
-            prediction = self._mod_naive_majority_vote_attack(sample, trunk_weight_gradient, trunk_hidden_size)
+            #prediction = self._mod_naive_majority_vote_attack(sample, trunk_weight_gradient, trunk_hidden_size)
             predictions_on_positive_samples.append(prediction)
 
             # delete trunk gradient
@@ -245,8 +245,8 @@ class NGMAttack(BaseAttack):
             sample = du.get_random_sample(x_non_member)
             trunk_weight_gradient = sparse.csr_matrix(server.get_gradients("trunk.net_freq")[0].flatten())
             trunk_hidden_size = self.model_config.hidden_sizes[0]
-            #prediction = self._naive_majority_vote_attack(sample, trunk_weight_gradient, trunk_hidden_size)
-            prediction = self._mod_naive_majority_vote_attack(sample, trunk_weight_gradient, trunk_hidden_size)
+            prediction = self._naive_majority_vote_attack(sample, trunk_weight_gradient, trunk_hidden_size)
+            #prediction = self._mod_naive_majority_vote_attack(sample, trunk_weight_gradient, trunk_hidden_size)
             predictions_on_negative_samples.append(prediction)
 
             # delete trunk gradient
