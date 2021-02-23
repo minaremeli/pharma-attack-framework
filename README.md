@@ -89,14 +89,14 @@ It uses a majority voting scheme to determine whether a certain compound was use
 
 ### Leaving / N-1 Attack
 The attack simulates a setting where all participants train together for some rounds, then one of the participants leaves.
-The attacker observes the success of an MI attack on a compound belonging to the "leaving party".
-The MI attack is the naive gradient attack *without* majority vote.
+The attacker observes the success of an MI attack on a **specific** compound belonging to the "leaving party".
 If the attacker success decreases after the participant leaves, he/she can be sure that the sample belonged to them.
 This is performed with a binomial test with significance threshold of 5%.
 #### Parameters
 * `--num_epochs`: Number of epochs that the attacker tests his hypothesis on. 
   One epoch is equal to 50 rounds. It takes 20 minutes to evaluate one epoch. 
   Default is 30.
+* `--voting_threshold`: The fraction of gradients connected to a non-zero input that need to be non-zero. Affects attack precision. Usually a higher threshold means higher precision (higher confidence in positive predictions). Default value is 0.2.
 #### Evaluation
 - number of positive epochs together
   - How many epochs had a positive membership inference prediction while all members trained *together*.

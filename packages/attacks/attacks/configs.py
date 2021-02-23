@@ -60,4 +60,8 @@ class LeavingAttackConfig:
     def __init__(self, parser):
         parser.add_argument("--num_epochs", help="Number of epochs that the attacker tests his hypothesis on. One "
                                                  "epoch is equal to 50 rounds.", type=int, default=30)
+        parser.add_argument("--voting_threshold", help="The fraction of gradients connected to a non-zero input that "
+                                                       "need to be non-zero. Affects attack precision. Usually a "
+                                                       "higher threshold means higher precision (higher confidence in "
+                                                       "positive predictions).", type=float, default=0.2)
         parser.parse_known_args(namespace=self)
