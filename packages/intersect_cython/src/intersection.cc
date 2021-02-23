@@ -17,6 +17,87 @@
  * If none can be found, return array.length.
  * From code by O. Kaser.
  */
+
+static size_t __frogadvanceUntilInt(const int *array, const size_t pos,
+                                 const size_t length, const size_t min, int hidden_size) {
+    size_t lower = pos + 1;
+
+    // special handling for a possibly common sequential case
+    if ((lower >= length) or (array[lower] >= min)) {
+        return lower;
+    }
+
+    //size_t spansize = 1; // could set larger
+    size_t spansize = hidden_size; // could set larger
+    // bootstrap an upper limit
+
+    while ((lower + spansize < length) and (array[lower + spansize] < min))
+        spansize *= 2;
+    size_t upper = (lower + spansize < length) ? lower + spansize : length - 1;
+
+    if (array[upper] < min) {// means array has no item >= min
+        return length;
+    }
+
+    // we know that the next-smallest span was too small
+    lower += (spansize / 2);
+
+    // else begin binary search
+    size_t mid = 0;
+    while (lower + 1 != upper) {
+        mid = (lower + upper) / 2;
+        if (array[mid] == min) {
+            return mid;
+        } else if (array[mid] < min)
+            lower = mid;
+        else
+            upper = mid;
+    }
+    return upper;
+
+}
+
+
+bool match(const int* nnz_indices, int nn_size, const int* grad_nnz, int grad_size, int hidden_size, float voting_threshold)
+{
+    int thres = int(hidden_size * voting_threshold);
+
+    for (int i = 0, j = 0; i < nn_size && j < grad_size; i++)
+    {
+        
+        //for (; j < grad_size && grad_nnz[j] < nnz_indices[i] * hidden_size; j++);
+
+        // Find the smallest integer larger than pos such that array[pos]>= min.
+        // If none can be found, return array.length.
+        j = __frogadvanceUntilInt(grad_nnz, j, grad_size, nnz_indices[i] * hidden_size, hidden_size / 4);
+
+        int k = 0;
+        for (; j + k < grad_size && grad_nnz[j + k] < (nnz_indices[i] + 1) * hidden_size 
+           && k < thres; k++);
+            
+        //int k = __frogadvanceUntilInt(grad_nnz, j, grad_size, (nnz_indices[i] + 1) * hidden_size, hidden_size / 2);
+
+        if (k < thres)
+        //if (k - j < thres)
+            return false;
+        
+        j += k;
+        //j = k;
+    }
+
+    return true;
+}
+/**
+ * This is often called galloping or exponential search.
+ *
+ * Used by frogintersectioncardinality below
+ *
+ * Based on binary search...
+ * Find the smallest integer larger than pos such
+ * that array[pos]>= min.
+ * If none can be found, return array.length.
+ * From code by O. Kaser.
+ */
 static size_t __frogadvanceUntil(const uint32_t *array, const size_t pos,
                                  const size_t length, const size_t min) {
     size_t lower = pos + 1;

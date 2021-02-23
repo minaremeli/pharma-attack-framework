@@ -6,6 +6,9 @@
 #include "common.h"
 
 using namespace std;
+
+bool match(const int* nnz_indices, int nn_size, const int* grad_nnz, int grad_size, int hidden_size, float voting_threshold);
+
 /*
  * Given two arrays, this writes the intersection to out. Returns the
  * cardinality of the intersection.

@@ -1,5 +1,6 @@
 # extern blocks define interfaces for Cython to C code
 from libc.stdint cimport uint32_t
+from libcpp cimport bool
 
 cdef extern from "intersection.h":
     #double run_dp(double sigma, double* c, int tau, dgs_disc_gauss_alg_t alg, long* samples_out, size_t ntrials, unsigned int seed)
@@ -12,4 +13,6 @@ cdef extern from "intersection.h":
     #* designed by N. Kurz, with adaptations by D. Lemire.
     #*/
     size_t SIMDintersection(const uint32_t *set1, const size_t length1, const uint32_t *set2, const size_t length2, uint32_t *out);
+
+    bool match(const int* nnz_indices, int nn_size, const int* grad_nnz, int grad_size, int hidden_size, float voting_threshold);
 

@@ -14,10 +14,14 @@ import numpy as np
 import torch
 import scipy.sparse as sparse
 import scipy.stats as stat
-from pyintersect import intersect
+from pyintersect import intersect, match
 from os import path
 import json
 from .configs import ModelConfigEncoder
+
+from sklearn.decomposition import PCA
+from umap import UMAP
+#from umap.parametric_umap import ParametricUMAP
 
 def sparse_to_tensor(mtx):
     return torch.FloatTensor(mtx.toarray())
@@ -153,8 +157,19 @@ class TrunkActivationAttack(BaseAttack):
 
         X = np.vstack([activations["member"][:len(activations["non-member"])], activations["non-member"]])
         y = np.array([1] * activations["non-member"].shape[0] + [0] * activations["non-member"].shape[0])
+        
+        print ("UMAP is performed.")
+        #dim_reducer = PCA(n_components=40)
+        #dim_reducer = ParametricUMAP()
 
         X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.33, random_state=42)
+        
+        #X_train1, X_train2, y_train1, y_train2 = train_test_split(X_train, y_train, test_size=0.5, random_state=42)
+        
+        dim_reducer = UMAP(n_components=50, n_neighbors=15).fit(X_train, y_train)
+
+        X_train = dim_reducer.transform(X_train)
+        X_test = dim_reducer.transform(X_test)
 
         n_estimators = self.attack_config.n_estimators
 
@@ -213,7 +228,9 @@ class NGMAttack(BaseAttack):
             sample = sparse.csr_matrix(sample.to_dense().numpy())
             trunk_weight_gradient = sparse.csr_matrix(server.get_gradients("trunk.net_freq")[0].flatten())
             trunk_hidden_size = self.model_config.hidden_sizes[0]
-            prediction = self._naive_majority_vote_attack(sample, trunk_weight_gradient, trunk_hidden_size)
+            #prediction = self._naive_majority_vote_attack(sample, trunk_weight_gradient, trunk_hidden_size)
+            #prediction = self._fast_naive_majority_vote_attack(sample, trunk_weight_gradient, trunk_hidden_size)
+            prediction = self._mod_naive_majority_vote_attack(sample, trunk_weight_gradient, trunk_hidden_size)
             predictions_on_positive_samples.append(prediction)
 
             # delete trunk gradient
@@ -228,7 +245,8 @@ class NGMAttack(BaseAttack):
             sample = du.get_random_sample(x_non_member)
             trunk_weight_gradient = sparse.csr_matrix(server.get_gradients("trunk.net_freq")[0].flatten())
             trunk_hidden_size = self.model_config.hidden_sizes[0]
-            prediction = self._naive_majority_vote_attack(sample, trunk_weight_gradient, trunk_hidden_size)
+            #prediction = self._naive_majority_vote_attack(sample, trunk_weight_gradient, trunk_hidden_size)
+            prediction = self._mod_naive_majority_vote_attack(sample, trunk_weight_gradient, trunk_hidden_size)
             predictions_on_negative_samples.append(prediction)
 
             # delete trunk gradient
@@ -247,15 +265,28 @@ class NGMAttack(BaseAttack):
         voting_threshold = self.attack_config.voting_threshold
         nnz_indices = sample.indices
         target_is_in = True
+        grad_nnz = grad.indices.astype(np.uint32)
         for nnz_index in nnz_indices:
-            nnz = np.array([int(nnz_index * hidden_size + i) for i in range(hidden_size)], dtype=np.uint32)
-            grad_nnz = grad.indices.astype(np.uint32)
+            #nnz = np.array([int(nnz_index * hidden_size + i) for i in range(hidden_size)], dtype=np.uint32)
+            nnz = np.arange(nnz_index * hidden_size, (nnz_index + 1) * hidden_size, dtype=np.uint32)
             # second parameter of intersect needs to be the larger array!
             num_matches = len(intersect(nnz, grad_nnz))
             if num_matches < int(hidden_size * voting_threshold):
                 target_is_in = False
                 break
         return int(target_is_in)
+        
+    def _fast_naive_majority_vote_attack(self, sample, grad, hidden_size):
+        voting_threshold = self.attack_config.voting_threshold
+        nnz_indices = sample.indices
+
+        return match(nnz_indices, grad.indices, hidden_size, voting_threshold)
+        
+    def _mod_naive_majority_vote_attack(self, sample, grad, hidden_size):
+        voting_threshold = self.attack_config.voting_threshold
+        nnz_indices = sample.indices
+
+        return voting_threshold <= len(grad.indices) / (len(nnz_indices) * hidden_size)
 
     def _train_clients_collect_batches(self, clients):
         batches = []
