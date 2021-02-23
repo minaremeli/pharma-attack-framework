@@ -55,17 +55,24 @@ class Participant:
             b["x_data"],
             size=[b["batch_size"], self.conf.input_size],
             device=self.dev)
-        y_ind = b["y_ind"].to(self.dev)
-        y_data = b["y_data"].to(self.dev)
+        y_ind = b["y_ind"].to(self.dev, non_blocking=True)
+        y_data = b["y_data"].to(self.dev, non_blocking=True)
         y_data = (y_data + 1) / 2.0
 
-        ## [batch_size x 2808] matrix with predictions - yhat_all
-        yhat_all = self.model(X)
-        ## yhat (1D) - 1 where the prediction matches the label, 0 when FN
+        if self.conf.uncertainty_weights:
+            yhat_all, logvars = self.model(X)
+            logvars = logvars.expand(yhat_all.shape[0], logvars.shape[0]).to(self.dev, non_blocking=True)
+            logvars_sub = logvars[y_ind[0], y_ind[1]].to(self.dev, non_blocking=True)
+        else:
+            yhat_all = self.model(X)
         yhat = yhat_all[y_ind[0], y_ind[1]]
 
+
         ## average loss of data
-        output = self.loss(yhat, y_data).sum() / 5000
+        if self.conf.uncertainty_weights:
+            output = (self.loss(yhat, y_data) * torch.exp(-logvars_sub) + logvars_sub/2).sum() / 5000
+        else:
+            output = self.loss(yhat, y_data).sum() / 5000
         ## average loss on one data point
         output_n = output / b["batch_size"]
 

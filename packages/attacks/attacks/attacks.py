@@ -308,7 +308,7 @@ class NGMAttack(BaseAttack):
         return torch.cat(batches, dim=0)
 
 
-class LeavingAttack(BaseAttack):
+class LeavingAttack(NGMAttack):
     def __init__(self, attack_config, model_config, results_path, load_saved_model, model_save, save_path):
         super().__init__(attack_config, model_config, results_path, load_saved_model, model_save, save_path)
 
@@ -318,48 +318,48 @@ class LeavingAttack(BaseAttack):
 
         num_epochs = self.attack_config.num_epochs
 
-        leaving_partner_idx = 0
-        x_leaving_partner, _ = du.load_partner_data("data", [leaving_partner_idx])[0]
-        print(x_leaving_partner.shape)
-        sample = du.get_random_sample(x_leaving_partner)
+        leaving_partner_idx = 6
+        x_member, _, _, _ = du.load_member_non_member_data("data", range(10))
+        sample = x_member[26822]
+
 
         # rounds where all clients train together
         together = []
         for _ in tqdm(range(num_epochs*50)):
             self._train_clients(clients)
 
-            trunk_weight_gradient = sparse.csr_matrix(server.get_gradients("trunk.net_freq")[0].flatten())
+
+            trunk_weight_gradient = sparse.csr_matrix(server.get_gradients("trunk.net_freq")[0][2945])
             trunk_hidden_size = self.model_config.hidden_sizes[0]
-            prediction = self._naive_gradient_attack(sample, trunk_weight_gradient, trunk_hidden_size)
+            prediction = self._naive_majority_vote_attack(sample, trunk_weight_gradient, trunk_hidden_size)
             together.append(prediction)
 
             # delete trunk gradient
             server.zero_grad()
         together = np.array(together)
-        print(together)
 
         # rounds where all BUT the first client train together
         alone = []
         for _ in tqdm(range(num_epochs*50)):
-            self._train_clients(clients[1:])
+            self._train_clients(clients[:leaving_partner_idx] + clients[leaving_partner_idx+1:])
 
-            trunk_weight_gradient = sparse.csr_matrix(server.get_gradients("trunk.net_freq")[0].flatten())
+
+            trunk_weight_gradient = sparse.csr_matrix(server.get_gradients("trunk.net_freq")[0][2945])
             trunk_hidden_size = self.model_config.hidden_sizes[0]
-            prediction = self._naive_gradient_attack(sample, trunk_weight_gradient, trunk_hidden_size)
+            prediction = self._naive_majority_vote_attack(sample, trunk_weight_gradient, trunk_hidden_size)
             alone.append(prediction)
 
             # delete trunk gradient
             server.zero_grad()
         alone = np.array(alone)
-        print(alone)
 
         pos_epochs_alone = 0
         pos_epochs_together = 0
 
         for k in range(num_epochs):
-            if len(alone[k * 50:(k + 1) * 50].nonzero()[0]) > 0:
+            if len(alone[k * 50:(k + 1) * 50].nonzero()[0]) >= 7:
                 pos_epochs_alone += 1
-            if len(together[k * 50:(k + 1) * 50].nonzero()[0]) > 0:
+            if len(together[k * 50:(k + 1) * 50].nonzero()[0]) >= 7:
                 pos_epochs_together += 1
 
         print("Total number of epochs in both cases: ", num_epochs)
@@ -377,16 +377,15 @@ class LeavingAttack(BaseAttack):
         self.results_dict["pos_epochs_left"] = pos_epochs_alone
         self.results_dict["p"] = result
 
-    def _naive_gradient_attack(self, sample, grad, hidden_size):
-        nnz_indices = sample.indices
-        target_is_in = True
-        for nnz_index in nnz_indices:
-            nnz_set = set({nnz_index * hidden_size + i for i in range(hidden_size)})
-            num_matches = len(nnz_set.intersection(grad.indices))
-            if num_matches != hidden_size:
-                target_is_in = False
-                break
-        return int(target_is_in)
+
+    def _naive_majority_vote_attack(self, sample, grad, hidden_size):
+        voting_threshold = self.attack_config.voting_threshold
+        grad_nnz = grad.indices
+        match_percent = len(grad_nnz) / hidden_size
+        if match_percent < voting_threshold:
+            return 0
+        else:
+            return 1
 
 
 

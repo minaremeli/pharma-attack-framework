@@ -30,6 +30,10 @@ class TrunkAndHead(torch.nn.Module):
         )
 
         self.apply(self.init_weights)
+        if conf.uncertainty_weights:
+            self.logvars = nn.Parameter(torch.zeros((conf.output_size,), dtype=torch.float64, requires_grad=True))
+        else:
+            self.logvars = None
 
     def init_weights(self, m):
         if type(m) in [nn.Linear, sc.SparseLinear]:
@@ -38,4 +42,7 @@ class TrunkAndHead(torch.nn.Module):
 
     def forward(self, X):
         X = self.trunk(X)
-        return self.head(X)
+        if self.training and self.logvars is not None:
+            return self.head(X), self.logvars
+        else:
+            return self.head(X)
