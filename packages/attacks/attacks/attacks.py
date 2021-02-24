@@ -168,8 +168,8 @@ class TrunkActivationAttack(BaseAttack):
         
         #dim_reducer = UMAP(n_components=50, n_neighbors=15).fit(X_train, y_train)
 
-        X_train = dim_reducer.transform(X_train)
-        X_test = dim_reducer.transform(X_test)
+        #X_train = dim_reducer.transform(X_train)
+        #X_test = dim_reducer.transform(X_test)
 
         n_estimators = self.attack_config.n_estimators
 
