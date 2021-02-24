@@ -19,8 +19,8 @@ from os import path
 import json
 from .configs import ModelConfigEncoder
 
-from sklearn.decomposition import PCA
-from umap import UMAP
+#from sklearn.decomposition import PCA
+#from umap import UMAP
 #from umap.parametric_umap import ParametricUMAP
 
 def sparse_to_tensor(mtx):
@@ -158,7 +158,7 @@ class TrunkActivationAttack(BaseAttack):
         X = np.vstack([activations["member"][:len(activations["non-member"])], activations["non-member"]])
         y = np.array([1] * activations["non-member"].shape[0] + [0] * activations["non-member"].shape[0])
         
-        print ("UMAP is performed.")
+        #print ("UMAP is performed.")
         #dim_reducer = PCA(n_components=40)
         #dim_reducer = ParametricUMAP()
 
@@ -166,7 +166,7 @@ class TrunkActivationAttack(BaseAttack):
         
         #X_train1, X_train2, y_train1, y_train2 = train_test_split(X_train, y_train, test_size=0.5, random_state=42)
         
-        dim_reducer = UMAP(n_components=50, n_neighbors=15).fit(X_train, y_train)
+        #dim_reducer = UMAP(n_components=50, n_neighbors=15).fit(X_train, y_train)
 
         X_train = dim_reducer.transform(X_train)
         X_test = dim_reducer.transform(X_test)
