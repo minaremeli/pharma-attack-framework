@@ -35,6 +35,15 @@ class ModelConfig:
         parser.add_argument("--uncertainty_weights", help="Whether or not to use uncertainty weighting. Possible "
                                                           "values: ['yes', 'true', 't', 'y', '1'] and ['no', 'false',"
                                                           " 'f', 'n', '0']", type=str2bool, default="no")
+        parser.add_argument("--compression", help="Whether to apply compression on trunk gradients before "
+                                                  "aggregation. Possible values: ['threshold', 'top-k', "
+                                                  "'random subset', 'quantization']",
+                            choices=["threshold", "top-k", "random subset", "quantization"], default=None,
+                            type=str)
+        parser.add_argument("--compression_parameter", help="A parameter with which to run the desired compression "
+                                                            "technique. Eg. 0.5 for 'random subset' would mean that "
+                                                            "50% of the gradients will be kept at random.",
+                            type=float, default=None)
         parser.parse_known_args(namespace=self)
 
 

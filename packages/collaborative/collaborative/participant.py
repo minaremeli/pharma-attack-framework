@@ -22,6 +22,7 @@ class Participant:
         self.loss = loss
         self.optimizer = optimizer
         self.scheduler = scheduler
+        self.train_subscribers = set()
         # create loader
         if sampler is not None:
             if dataset:
@@ -79,6 +80,13 @@ class Participant:
         ## computes gradients
         output_n.backward()
 
+        ## notifies subscribers that train() has been called
+        self._update_subscribers()
+
+    def _update_subscribers(self):
+        for subscriber in self.train_subscribers:
+            subscriber.update()
+
     def eval(self, on_train=True):
         self.model.eval()
         if not self.loss:
@@ -134,6 +142,13 @@ class Participant:
     def load_model(self, save_path, filename="model.pkl"):
         state_dict = torch.load(path.join(save_path, filename))
         self.model.load_state_dict(state_dict)
+
+    def register_train(self, subscriber):
+        self.train_subscribers.add(subscriber)
+
+    def unregister_train(self, unsubscriber):
+        self.train_subscribers.discard(unsubscriber)
+
 
 
 class Server(Participant):

@@ -16,6 +16,11 @@ A package for simulating collaborative learning.
 
 Install: `pip install -e collaborative`
 
+## Compression
+A small package for simple compression (w/ and w/o error propagation).
+
+Install: `pip install -e compression`
+
 ## Utils
 A utils package mainly for loading data.
 

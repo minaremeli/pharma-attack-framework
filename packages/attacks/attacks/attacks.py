@@ -18,10 +18,12 @@ from pyintersect import intersect, match
 from os import path
 import json
 from .configs import ModelConfigEncoder
+from compression import GradientCompressor, CompressionMethods
 
-#from sklearn.decomposition import PCA
-#from umap import UMAP
-#from umap.parametric_umap import ParametricUMAP
+
+# from sklearn.decomposition import PCA
+# from umap import UMAP
+# from umap.parametric_umap import ParametricUMAP
 
 def sparse_to_tensor(mtx):
     return torch.FloatTensor(mtx.toarray())
@@ -39,6 +41,11 @@ class BaseAttack:
         self.save_path = save_path
         self.results_dict = {}
 
+        if self.model_config.compression:
+            self.compress = True
+        else:
+            self.compress = False
+
     def run_attack(self):
         raise NotImplementedError()
 
@@ -52,6 +59,17 @@ class BaseAttack:
                 writer.writeheader()
             writer.writerow(attack_model_results_dict)
 
+    def _get_compression_method(self):
+        compression_method = self.model_config.compression
+        if compression_method == "threshold":
+            return CompressionMethods.THRESHOLD
+        elif compression_method == "top-k":
+            return CompressionMethods.TOP_K
+        elif compression_method == "random subset":
+            return CompressionMethods.RAND_SUB
+        elif compression_method == "quantization":
+            return CompressionMethods.QUANTIZATION
+
     def _initialize_and_train_targeted_model(self):
         if self.load_saved_model:
             print("Load model config")
@@ -64,6 +82,10 @@ class BaseAttack:
             server = Server(trunk, conf=self.model_config)
             server.load_model(path.join(self.save_path, "server"))
             clients = self._initialize_clients(trunk)
+            if self.compress:
+                self.compressor = GradientCompressor(parameters=[p for p in trunk.parameters() if p.requires_grad],
+                                                     kind=self._get_compression_method(),
+                                                     compression_parameter=self.model_config.compression_parameter)
         else:
             print("Train targeted model...")
             rounds = self.model_config.rounds
@@ -71,7 +93,14 @@ class BaseAttack:
             trunk = Trunk(self.model_config)
             server = Server(trunk, conf=self.model_config)
             clients = self._initialize_clients(trunk)
+            if self.compress:
+                self.compressor = GradientCompressor(parameters=[p for p in trunk.parameters() if p.requires_grad],
+                                                     kind=self._get_compression_method(),
+                                                     compression_parameter=self.model_config.compression_parameter)
+                for client in clients:
+                    client.register_train(subscriber=self.compressor)
             self._train_targeted_model(clients=clients, server=server, rounds=rounds)
+
             if self.model_save:
                 print("Saving trained models...")
                 server.save_model(path.join(self.save_path, "server"))
@@ -105,17 +134,21 @@ class BaseAttack:
     def _train_targeted_model(self, clients, server, rounds):
         for r in tqdm(range(rounds)):
             self._train_clients(clients)
+            if self.compress:
+                self.compressor.compress_and_set()
             # server updates his trunk
             server.update_weights()
             # server zeroes his trunk
             server.zero_grad()
 
-    def _train_clients(self, clients):
+    def _train_clients(self, clients, compress=False):
         for i, client in enumerate(clients):
             # client gets his next batch
             batch = client.get_next_batch()
             # client calculates updates for trunk+head on that batch
             client.train(batch)
+            if compress:
+                self.compressor.compress_and_set()
             # client updates his head
             client.update_weights()
             # client zeroes his head
@@ -157,19 +190,19 @@ class TrunkActivationAttack(BaseAttack):
 
         X = np.vstack([activations["member"][:len(activations["non-member"])], activations["non-member"]])
         y = np.array([1] * activations["non-member"].shape[0] + [0] * activations["non-member"].shape[0])
-        
-        #print ("UMAP is performed.")
-        #dim_reducer = PCA(n_components=40)
-        #dim_reducer = ParametricUMAP()
+
+        # print ("UMAP is performed.")
+        # dim_reducer = PCA(n_components=40)
+        # dim_reducer = ParametricUMAP()
 
         X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.33, random_state=42)
-        
-        #X_train1, X_train2, y_train1, y_train2 = train_test_split(X_train, y_train, test_size=0.5, random_state=42)
-        
-        #dim_reducer = UMAP(n_components=50, n_neighbors=15).fit(X_train, y_train)
 
-        #X_train = dim_reducer.transform(X_train)
-        #X_test = dim_reducer.transform(X_test)
+        # X_train1, X_train2, y_train1, y_train2 = train_test_split(X_train, y_train, test_size=0.5, random_state=42)
+
+        # dim_reducer = UMAP(n_components=50, n_neighbors=15).fit(X_train, y_train)
+
+        # X_train = dim_reducer.transform(X_train)
+        # X_test = dim_reducer.transform(X_test)
 
         n_estimators = self.attack_config.n_estimators
 
@@ -222,15 +255,15 @@ class NGMAttack(BaseAttack):
         # collect predictions on "positive" samples
         predictions_on_positive_samples = []
         for _ in tqdm(range(num_samples)):
-            x_member = self._train_clients_collect_batches(clients)
+            x_member = self._train_clients_collect_batches(clients, compress=self.compress)
 
             sample = du.get_random_sample(x_member)
             sample = sparse.csr_matrix(sample.to_dense().numpy())
             trunk_weight_gradient = sparse.csr_matrix(server.get_gradients("trunk.net_freq")[0].flatten())
             trunk_hidden_size = self.model_config.hidden_sizes[0]
             prediction = self._naive_majority_vote_attack(sample, trunk_weight_gradient, trunk_hidden_size)
-            #prediction = self._fast_naive_majority_vote_attack(sample, trunk_weight_gradient, trunk_hidden_size)
-            #prediction = self._mod_naive_majority_vote_attack(sample, trunk_weight_gradient, trunk_hidden_size)
+            # prediction = self._fast_naive_majority_vote_attack(sample, trunk_weight_gradient, trunk_hidden_size)
+            # prediction = self._mod_naive_majority_vote_attack(sample, trunk_weight_gradient, trunk_hidden_size)
             predictions_on_positive_samples.append(prediction)
 
             # delete trunk gradient
@@ -240,13 +273,13 @@ class NGMAttack(BaseAttack):
         # collect predictions on "negative" samples
         predictions_on_negative_samples = []
         for _ in tqdm(range(num_samples)):
-            self._train_clients(clients)
+            self._train_clients(clients, compress=self.compress)
 
             sample = du.get_random_sample(x_non_member)
             trunk_weight_gradient = sparse.csr_matrix(server.get_gradients("trunk.net_freq")[0].flatten())
             trunk_hidden_size = self.model_config.hidden_sizes[0]
             prediction = self._naive_majority_vote_attack(sample, trunk_weight_gradient, trunk_hidden_size)
-            #prediction = self._mod_naive_majority_vote_attack(sample, trunk_weight_gradient, trunk_hidden_size)
+            # prediction = self._mod_naive_majority_vote_attack(sample, trunk_weight_gradient, trunk_hidden_size)
             predictions_on_negative_samples.append(prediction)
 
             # delete trunk gradient
@@ -267,7 +300,7 @@ class NGMAttack(BaseAttack):
         target_is_in = True
         grad_nnz = grad.indices.astype(np.uint32)
         for nnz_index in nnz_indices:
-            #nnz = np.array([int(nnz_index * hidden_size + i) for i in range(hidden_size)], dtype=np.uint32)
+            # nnz = np.array([int(nnz_index * hidden_size + i) for i in range(hidden_size)], dtype=np.uint32)
             nnz = np.arange(nnz_index * hidden_size, (nnz_index + 1) * hidden_size, dtype=np.uint32)
             # second parameter of intersect needs to be the larger array!
             num_matches = len(intersect(nnz, grad_nnz))
@@ -275,20 +308,20 @@ class NGMAttack(BaseAttack):
                 target_is_in = False
                 break
         return int(target_is_in)
-        
+
     def _fast_naive_majority_vote_attack(self, sample, grad, hidden_size):
         voting_threshold = self.attack_config.voting_threshold
         nnz_indices = sample.indices
 
         return match(nnz_indices, grad.indices, hidden_size, voting_threshold)
-        
+
     def _mod_naive_majority_vote_attack(self, sample, grad, hidden_size):
         voting_threshold = self.attack_config.voting_threshold
         nnz_indices = sample.indices
 
         return voting_threshold <= len(grad.indices) / (len(nnz_indices) * hidden_size)
 
-    def _train_clients_collect_batches(self, clients):
+    def _train_clients_collect_batches(self, clients, compress=False):
         batches = []
         for i, client in enumerate(clients):
             # client gets his next batch
@@ -300,6 +333,8 @@ class NGMAttack(BaseAttack):
             batches.append(x)
             # client calculates updates for trunk+head on that batch
             client.train(batch)
+            if compress:
+                self.compressor.compress_and_set()
             # client updates his head
             client.update_weights()
             # client zeroes his head
@@ -322,12 +357,10 @@ class LeavingAttack(NGMAttack):
         x_member, _, _, _ = du.load_member_non_member_data("data", range(10))
         sample = x_member[26822]
 
-
         # rounds where all clients train together
         together = []
-        for _ in tqdm(range(num_epochs*50)):
-            self._train_clients(clients)
-
+        for _ in tqdm(range(num_epochs * 50)):
+            self._train_clients(clients, compress=True)
 
             trunk_weight_gradient = sparse.csr_matrix(server.get_gradients("trunk.net_freq")[0][2945])
             trunk_hidden_size = self.model_config.hidden_sizes[0]
@@ -340,9 +373,8 @@ class LeavingAttack(NGMAttack):
 
         # rounds where all BUT the first client train together
         alone = []
-        for _ in tqdm(range(num_epochs*50)):
-            self._train_clients(clients[:leaving_partner_idx] + clients[leaving_partner_idx+1:])
-
+        for _ in tqdm(range(num_epochs * 50)):
+            self._train_clients(clients[:leaving_partner_idx] + clients[leaving_partner_idx + 1:])
 
             trunk_weight_gradient = sparse.csr_matrix(server.get_gradients("trunk.net_freq")[0][2945])
             trunk_hidden_size = self.model_config.hidden_sizes[0]
@@ -377,7 +409,6 @@ class LeavingAttack(NGMAttack):
         self.results_dict["pos_epochs_left"] = pos_epochs_alone
         self.results_dict["p"] = result
 
-
     def _naive_majority_vote_attack(self, sample, grad, hidden_size):
         voting_threshold = self.attack_config.voting_threshold
         grad_nnz = grad.indices
@@ -386,9 +417,3 @@ class LeavingAttack(NGMAttack):
             return 0
         else:
             return 1
-
-
-
-
-
-
