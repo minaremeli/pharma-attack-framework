@@ -86,6 +86,8 @@ class BaseAttack:
                 self.compressor = GradientCompressor(parameters=[p for p in trunk.parameters() if p.requires_grad],
                                                      kind=self._get_compression_method(),
                                                      compression_parameter=self.model_config.compression_parameter)
+                for client in clients:
+                    client.register_train(subscriber=self.compressor)
         else:
             print("Train targeted model...")
             rounds = self.model_config.rounds
