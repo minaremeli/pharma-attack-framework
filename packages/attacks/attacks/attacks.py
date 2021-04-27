@@ -50,6 +50,8 @@ class BaseAttack:
         raise NotImplementedError()
 
     def log_results(self):
+        del self.model_config.batch_size
+        del self.model_config.output_size
         attack_model_results_dict = {**self.attack_config.__dict__, **self.model_config.__dict__, **self.results_dict}
 
         with open(self.results_path, "a+") as f:
