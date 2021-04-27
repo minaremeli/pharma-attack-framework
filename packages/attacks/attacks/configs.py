@@ -15,6 +15,9 @@ class ModelConfig:
     def __init__(self, parser):
         parser.add_argument("--rounds", help="How many rounds should the model train for.", type=int, default=1000)
         parser.add_argument("--input_size", help="Size of input.", type=int, default=32000)
+        parser.add_argument("--batch_ratio", help="Specifies the ratio of data used in each round. Size of batch: ("
+                                                  "batch_ratio) x (local_training_data_size).", type=float,
+                            default=0.02)
         parser.add_argument("--hidden_sizes", nargs="+", help="Hidden sizes", default=[6000], type=int)
         parser.add_argument("--first_dropout", help="Dropout after first layer.", type=float, default=0.0)
         parser.add_argument("--middle_dropout", help="Dropout for layers before the last", type=float, default=0.2)

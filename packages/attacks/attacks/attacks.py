@@ -122,7 +122,7 @@ class BaseAttack:
         clients = []
         for i, (x, y) in enumerate(partner_data):
             self.model_config.output_size = y.shape[1]
-            self.model_config.batch_size = int(x.shape[0] * 0.02)
+            self.model_config.batch_size = int(x.shape[0] * self.model_config.batch_ratio)
             model = TrunkAndHead(trunk, self.model_config)
             print("Model of %d. partner" % i)
             print(model)
