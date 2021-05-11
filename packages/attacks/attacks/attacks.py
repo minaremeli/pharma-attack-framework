@@ -21,10 +21,6 @@ from .configs import ModelConfigEncoder
 from compression import GradientCompressor, CompressionMethods
 
 
-# from sklearn.decomposition import PCA
-# from umap import UMAP
-# from umap.parametric_umap import ParametricUMAP
-
 def sparse_to_tensor(mtx):
     return torch.FloatTensor(mtx.toarray())
 
@@ -45,6 +41,10 @@ class BaseAttack:
             self.compress = True
         else:
             self.compress = False
+
+        if self.load_saved_model:
+            print("Load model config")
+            self._load_model_config()
 
     def run_attack(self):
         raise NotImplementedError()
@@ -73,51 +73,50 @@ class BaseAttack:
             return CompressionMethods.QUANTIZATION
 
     def _initialize_and_train_targeted_model(self):
-        if self.load_saved_model:
-            print("Load model config")
-            with open(path.join(self.save_path, "model_config.json"), "r") as f:
-                attr_dict = json.load(f)
-                self.model_config.__dict__.update(attr_dict)
+        trunk, server = self._initialize_server()
+        clients = self._initialize_clients(trunk)
+        if self.compress:
+            self._register_compression(trunk.parameters(), clients)
 
-            print("Load saved models from %s" % self.save_path)
-            trunk = Trunk(self.model_config)
-            server = Server(trunk, conf=self.model_config)
-            server.load_model(path.join(self.save_path, "server"))
-            clients = self._initialize_clients(trunk)
-            if self.compress:
-                self.compressor = GradientCompressor(parameters=[p for p in trunk.parameters() if p.requires_grad],
-                                                     kind=self._get_compression_method(),
-                                                     compression_parameter=self.model_config.compression_parameter)
-                for client in clients:
-                    client.register_train(subscriber=self.compressor)
-        else:
+        if not self.load_saved_model:
             print("Train targeted model...")
             rounds = self.model_config.rounds
-
-            trunk = Trunk(self.model_config)
-            server = Server(trunk, conf=self.model_config)
-            clients = self._initialize_clients(trunk)
-            if self.compress:
-                self.compressor = GradientCompressor(parameters=[p for p in trunk.parameters() if p.requires_grad],
-                                                     kind=self._get_compression_method(),
-                                                     compression_parameter=self.model_config.compression_parameter)
-                for client in clients:
-                    client.register_train(subscriber=self.compressor)
             self._train_targeted_model(clients=clients, server=server, rounds=rounds)
-
             if self.model_save:
-                print("Saving trained models...")
-                server.save_model(path.join(self.save_path, "server"))
-                for i, c in enumerate(clients):
-                    c.save_model(path.join(self.save_path, str(i)))
-                print("Save model config...")
-                model_dict = {**self.model_config.__dict__}
-                # we don't want to overwrite the seed value after re-loading the model
-                del model_dict["seed"]
-                with open(path.join(self.save_path, "model_config.json"), "w") as f:
-                    json.dump(model_dict, f, cls=ModelConfigEncoder)
+                self._save_models(server, clients)
 
         return trunk, server, clients
+
+    def _save_models(self, server, clients):
+        print("Saving trained models...")
+        server.save_model(path.join(self.save_path, "server"))
+        for i, c in enumerate(clients):
+            c.save_model(path.join(self.save_path, str(i)))
+        print("Save model config...")
+        model_dict = {**self.model_config.__dict__}
+        # we don't want to overwrite the seed value after re-loading the model
+        del model_dict["seed"]
+        with open(path.join(self.save_path, "model_config.json"), "w") as f:
+            json.dump(model_dict, f, cls=ModelConfigEncoder)
+
+    def _register_compression(self, parameters, clients):
+        self.compressor = GradientCompressor(parameters=[p for p in parameters() if p.requires_grad],
+                                             kind=self._get_compression_method(),
+                                             compression_parameter=self.model_config.compression_parameter)
+        for client in clients:
+            client.register_train(subscriber=self.compressor)
+
+    def _initialize_server(self):
+        trunk = Trunk(self.model_config)
+        server = Server(trunk, conf=self.model_config)
+        if self.load_saved_model:
+            server.load_model(path.join(self.save_path, "server"))
+        return trunk, server
+
+    def _load_model_config(self):
+        with open(path.join(self.save_path, "model_config.json"), "r") as f:
+            attr_dict = json.load(f)
+            self.model_config.__dict__.update(attr_dict)
 
     def _initialize_clients(self, trunk):
         partner_data = du.load_partner_data("data", range(10))
@@ -195,18 +194,7 @@ class TrunkActivationAttack(BaseAttack):
         X = np.vstack([activations["member"][:len(activations["non-member"])], activations["non-member"]])
         y = np.array([1] * activations["non-member"].shape[0] + [0] * activations["non-member"].shape[0])
 
-        # print ("UMAP is performed.")
-        # dim_reducer = PCA(n_components=40)
-        # dim_reducer = ParametricUMAP()
-
         X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.33, random_state=42)
-
-        # X_train1, X_train2, y_train1, y_train2 = train_test_split(X_train, y_train, test_size=0.5, random_state=42)
-
-        # dim_reducer = UMAP(n_components=50, n_neighbors=15).fit(X_train, y_train)
-
-        # X_train = dim_reducer.transform(X_train)
-        # X_test = dim_reducer.transform(X_test)
 
         n_estimators = self.attack_config.n_estimators
 
