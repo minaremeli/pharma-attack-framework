@@ -12,7 +12,7 @@ This is a framework for running attacks on sparsechem models.
 ### Required parameters
 Some parameters that need to be set in order to run an attack.
 
-* `--attack_name`: This specifies which attack to run. Values can be: `[NGMA, TrunkActivation, NOATTACK, Leaving]`.
+* `--attack_name`: This specifies which attack to run. Values can be: `[NGMA, TrunkActivation, NOATTACK, Leaving, ActiveTrunkActivation]`.
 `NOATTACK` is a special setting where we don't run any attacks.
   
 * `--results_file`: Name of the .csv file you want to save your results in.
@@ -63,6 +63,22 @@ Averages are calculated over the clients.
 ### Trunk Activation Attack
 The attacker model is a `RandomForestClassifier`, whose input is the trunk activation values.
 The attacker's goal is to predict membership based on this activation.
+#### Parameters
+* `--num_samples`: Number of member and non-member samples that the attacker collects for training and evaluating her attack.
+  Default is 500.
+* `--n_estimators`: Number of estimators used to train the RandomForestModel. 
+  Default is 100.
+#### Evaluation
+* TP, FP, TN, FN
+* accuracy
+* precision
+* recall
+
+### Active Trunk Activation Attack
+This is the same attack as above, except that the adversary (the server) actively isolates participants.
+He does not train one globally shared model, but multiple individual models, each belonging to one participant.
+Attacking the individual models (instead of the global one) allows him to conduct a more successful membership inference attack.
+The evaluation metrics are the averages of the attacks on the individual models.
 #### Parameters
 * `--num_samples`: Number of member and non-member samples that the attacker collects for training and evaluating her attack.
   Default is 500.

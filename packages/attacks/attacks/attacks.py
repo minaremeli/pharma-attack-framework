@@ -19,6 +19,7 @@ from os import path
 import json
 from .configs import ModelConfigEncoder
 from compression import GradientCompressor, CompressionMethods
+from .adversaries import IsolatingServer
 
 
 def sparse_to_tensor(mtx):
@@ -178,14 +179,24 @@ class BaseAttack:
 
 class TrunkActivationAttack(BaseAttack):
     def __init__(self, attack_config, model_config, results_path, load_saved_model, model_save, save_path):
-        print("Trunk Activation Attack")
         super().__init__(attack_config, model_config, results_path, load_saved_model, model_save, save_path)
 
     def run_attack(self):
+        print("Trunk Activation Attack")
         trunk, server, clients = self._initialize_and_train_targeted_model()
         x_member, _, x_non_member, _ = du.load_member_non_member_data("data", range(10))
+
+        y_pred, y_test = self._attack_on_trunk(trunk, x_member, x_non_member)
+
+        self._evaluate_model(clients)
+        self._evaluate_attack(y_pred, y_test)
+
+        print("Attack results:")
+        print(self.results_dict)
+
+    def _attack_on_trunk(self, trunk, x_member, x_non_member):
         activation_shape = self.model_config.hidden_sizes[0]
-        num_samples = self.attack_config.num_samples
+        num_samples = min(self.attack_config.num_samples, x_member.shape[0])
 
         activations = self._load_activations(trunk=trunk, member_samples=x_member,
                                              non_member_samples=x_non_member,
@@ -203,11 +214,8 @@ class TrunkActivationAttack(BaseAttack):
 
         y_pred = atk.predict(X_test)
 
-        self._evaluate_model(clients)
-        self._evaluate_attack(y_pred, y_test)
+        return y_pred, y_test
 
-        print("Attack results:")
-        print(self.results_dict)
 
     def _load_activations(self, trunk, member_samples, non_member_samples, activation_shape, num_samples=None):
         activations = {}
@@ -232,6 +240,73 @@ class TrunkActivationAttack(BaseAttack):
                 activations["non-member"][i] = trunk(sparse_to_tensor(s)).detach().numpy()
 
         return activations
+
+
+class ActiveTrunkActivationAttack(TrunkActivationAttack):
+    def __init__(self, attack_config, model_config, results_path, load_saved_model, model_save, save_path):
+        super().__init__(attack_config, model_config, results_path, load_saved_model, model_save, save_path)
+
+    def run_attack(self):
+        print("Active Trunk Activation Attack")
+        isolated_trunks, adversarial_server, clients = self._initialize_and_train_isolated_models()
+        y_preds, y_tests = [], []
+        # performing Trunk Activation Attack on isolated trunks
+        for i, trunk in enumerate(isolated_trunks):
+            # training and non-training data of specific partner i
+            x_member, _, x_non_member, _ = du.load_member_non_member_data("data", [i])
+
+            y_individual_pred, y_individual_test = self._attack_on_trunk(trunk, x_member, x_non_member)
+            y_preds.append(y_individual_pred)
+            y_tests.append(y_individual_test)
+
+        y_pred = np.concatenate(y_preds)
+        y_test = np.concatenate(y_tests)
+
+        self._evaluate_model(clients)
+        self._evaluate_attack(y_pred, y_test)
+
+        print("Attack results:")
+        print(self.results_dict)
+
+    def _initialize_and_train_isolated_models(self):
+        print("Initialize and train isolated models...")
+        trunks, server = self._initialize_server()
+        clients = self._initialize_clients(trunks)
+        if self.compress:
+            for trunk in trunks:
+                self._register_compression(trunk.parameters(), clients)
+
+        if not self.load_saved_model:
+            print("Train targeted model...")
+            rounds = self.model_config.rounds
+            self._train_targeted_model(clients=clients, server=server, rounds=rounds)
+            if self.model_save:
+                self._save_models(server, clients)
+
+        return trunks, server, clients
+
+    def _initialize_server(self):
+        trunk = Trunk(self.model_config)
+        server = IsolatingServer(num_clients=10, model=trunk, conf=self.model_config)
+        if self.load_saved_model:
+            server.load_model(path.join(self.save_path, "server"))
+        return server.get_isolated_models(), server
+
+    def _initialize_clients(self, individual_trunks):
+        partner_data = du.load_partner_data("data", range(10))
+        clients = []
+        for i, (x, y) in enumerate(partner_data):
+            self.model_config.output_size = y.shape[1]
+            self.model_config.batch_size = int(x.shape[0] * self.model_config.batch_ratio)
+            model = TrunkAndHead(individual_trunks[i], self.model_config)
+            print("Model of %d. partner" % i)
+            print(model)
+            dataset = sc.SparseDataset(x, y)
+            client = Client(model, conf=self.model_config, dataset=dataset)
+            if self.load_saved_model:
+                client.load_model(path.join(self.save_path, str(i)))
+            clients.append(client)
+        return clients
 
 
 class NGMAttack(BaseAttack):
