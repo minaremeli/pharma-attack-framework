@@ -12,6 +12,8 @@ from sklearn.model_selection import train_test_split
 from sklearn.metrics import confusion_matrix, recall_score, precision_score, accuracy_score
 import numpy as np
 import torch
+import torch.nn as nn
+from torch.utils.data import DataLoader, TensorDataset
 import scipy.sparse as sparse
 import scipy.stats as stat
 from pyintersect import intersect, match
@@ -43,10 +45,6 @@ class BaseAttack:
         else:
             self.compress = False
 
-        if self.load_saved_model:
-            print("Load model config")
-            self._load_model_config()
-
     def run_attack(self):
         raise NotImplementedError()
 
@@ -73,7 +71,10 @@ class BaseAttack:
         elif compression_method == "quantization":
             return CompressionMethods.QUANTIZATION
 
-    def _initialize_and_train_targeted_model(self):
+    def _initialize_and_train_targeted_model(self, save_intermediate=False):
+        if self.load_saved_model:
+            print("Load model config")
+            self._load_model_config()
         trunk, server = self._initialize_server()
         clients = self._initialize_clients(trunk)
         if self.compress:
@@ -82,17 +83,17 @@ class BaseAttack:
         if not self.load_saved_model:
             print("Train targeted model...")
             rounds = self.model_config.rounds
-            self._train_targeted_model(clients=clients, server=server, rounds=rounds)
+            self._train_targeted_model(clients=clients, server=server, rounds=rounds, save_intermediate=save_intermediate)
             if self.model_save:
                 self._save_models(server, clients)
 
         return trunk, server, clients
 
-    def _save_models(self, server, clients):
+    def _save_models(self, server, clients, filename="model.pkl"):
         print("Saving trained models...")
-        server.save_model(path.join(self.save_path, "server"))
+        server.save_model(path.join(self.save_path, "server"), filename)
         for i, c in enumerate(clients):
-            c.save_model(path.join(self.save_path, str(i)))
+            c.save_model(path.join(self.save_path, str(i)), filename)
         print("Save model config...")
         model_dict = {**self.model_config.__dict__}
         # we don't want to overwrite the seed value after re-loading the model
@@ -135,7 +136,7 @@ class BaseAttack:
             clients.append(client)
         return clients
 
-    def _train_targeted_model(self, clients, server, rounds):
+    def _train_targeted_model(self, clients, server, rounds, save_intermediate=False):
         for r in tqdm(range(rounds)):
             self._train_clients(clients)
             if self.compress:
@@ -144,6 +145,10 @@ class BaseAttack:
             server.update_weights()
             # server zeroes his trunk
             server.zero_grad()
+
+            if save_intermediate and r % 20 == 0:  # save after every epoch
+                self._save_models(server, clients, filename="model_%d.pkl" % r//20)
+
 
     def _train_clients(self, clients, compress=False):
         for i, client in enumerate(clients):
@@ -484,3 +489,82 @@ class LeavingAttack(NGMAttack):
             return 0
         else:
             return 1
+
+
+class MultiModelTrunkActivationAttack(TrunkActivationAttack):
+    def __init__(self, attack_config, model_config, results_path, load_saved_model, model_save, save_path):
+        super().__init__(attack_config, model_config, results_path, load_saved_model, model_save, save_path)
+        self.model_save = True  # save the trained CP models by default
+
+    def run_attack(self):
+        print("Multi-Model Trunk Activation Attack")
+        base_save_path = self.save_path
+        save_intermediate_models = self.attack_config.best_models or self.attack_config.intermediate_models
+        attacked_trunks = []
+        # train CP models
+        for r in range(self.attack_config.num_models):
+            self.model_config.lr = np.round_(np.random.random() / 10, 5)  # select random learning rate
+            self.save_path = path.join(base_save_path, "CP_%d" % (r+1))  # change save path
+            trunk, server, clients = self._initialize_and_train_targeted_model(save_intermediate=save_intermediate_models)
+            attacked_trunks.append(trunk)
+        del self.model_config.lr  # delete so lr won't be logged (only latest lr would be logged)
+
+        # collect trunk outputs on member and non-member data
+        x_member, _, x_non_member, _ = du.load_member_non_member_data("data", range(10))
+        trunk_outputs = []
+        activation_shape = self.model_config.hidden_sizes[0]
+        num_samples = min(self.attack_config.num_samples, x_member.shape[0])
+        for trunk in attacked_trunks:
+            activations = self._load_activations(trunk=trunk, member_samples=x_member,
+                                                 non_member_samples=x_non_member,
+                                                 activation_shape=activation_shape, num_samples=num_samples)
+
+            X = np.vstack([activations["member"][:len(activations["non-member"])], activations["non-member"]])
+            membership = np.array([1] * activations["non-member"].shape[0] + [0] * activations["non-member"].shape[0])
+            trunk_outputs.append(X)
+
+        # concatenate
+        trunk_outputs = np.concatenate(trunk_outputs, axis=1)
+        X_train, X_test, y_train, y_test = train_test_split(trunk_outputs, membership, test_size=0.33, random_state=42)
+        train_dataset = TensorDataset(torch.from_numpy(X_train).float(), torch.unsqueeze(torch.from_numpy(y_train).float(), dim=1))
+        test_dataset = TensorDataset(torch.from_numpy(X_test).float(), torch.unsqueeze(torch.from_numpy(y_test).float(), dim=1))
+        train_data_loader = DataLoader(train_dataset, batch_size=32)
+        test_data_loader = DataLoader(test_dataset, batch_size=32)
+
+        # ... and run through attack
+        model = nn.Sequential(
+            nn.Linear(in_features=trunk_outputs.shape[1], out_features=1024),
+            nn.Dropout(p=0.2),
+            nn.ReLU(),
+            nn.Linear(in_features=1024, out_features=256),
+            nn.ReLU(),
+            nn.Linear(in_features=256, out_features=1),
+        )
+        optimizer = torch.optim.Adam(params=model.parameters())
+        loss_func = nn.BCEWithLogitsLoss()
+
+        print("Train attacker model...")
+        print(model)
+        model.train()
+        for _ in tqdm(range(self.attack_config.num_epochs)):
+            for (x, y) in train_data_loader:
+                optimizer.zero_grad()
+                out = model(x)
+                loss = loss_func(out, y)
+                loss.backward()
+                optimizer.step()
+
+        model.eval()
+        y_pred, y_test = [], []
+        for (x, y) in tqdm(test_data_loader):
+            pred = model(x)
+            pred = (pred > 0.5).int().squeeze().tolist()
+            y = y.int().squeeze().tolist()
+            y_pred.extend(pred)
+            y_test.extend(y)
+
+        # self._evaluate_model(clients)
+        self._evaluate_attack(y_pred, y_test)
+
+        print("Attack results:")
+        print(self.results_dict)

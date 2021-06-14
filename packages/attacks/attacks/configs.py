@@ -1,6 +1,7 @@
 from json import JSONEncoder
 import argparse
 
+
 def str2bool(v):
     if isinstance(v, bool):
         return v
@@ -10,6 +11,7 @@ def str2bool(v):
         return False
     else:
         raise argparse.ArgumentTypeError('Boolean value expected.')
+
 
 class ModelConfig:
     def __init__(self, parser):
@@ -62,7 +64,6 @@ class ModelConfigEncoder(JSONEncoder):
             return JSONEncoder.default(self, obj)
 
 
-
 class TrunkActivationAttackConfig:
     def __init__(self, parser):
         parser.add_argument("--num_samples", help="Number of member and non-member samples that the attacker collects "
@@ -83,6 +84,7 @@ class NGMAttackConfig:
                                                        "positive predictions).", type=float, default=0.5)
         parser.parse_known_args(namespace=self)
 
+
 class LeavingAttackConfig:
     def __init__(self, parser):
         parser.add_argument("--num_epochs", help="Number of epochs that the attacker tests his hypothesis on. One "
@@ -91,4 +93,21 @@ class LeavingAttackConfig:
                                                        "need to be non-zero. Affects attack precision. Usually a "
                                                        "higher threshold means higher precision (higher confidence in "
                                                        "positive predictions).", type=float, default=0.2)
+        parser.parse_known_args(namespace=self)
+
+
+class MultiModelTrunkActivationAttackConfig:
+    def __init__(self, parser):
+        parser.add_argument("--num_models", help="Number of compute plans to train for an attack.", type=int, default=3)
+        parser.add_argument("--num_samples", help="Number of member and non-member samples that the attacker collects "
+                                                  "for training and evaluating her attack.", type=int, default=500)
+        parser.add_argument("--num_epochs", help="Number of epochs that the attacker trains for.", type=int, default=300)
+        parser.add_argument("--best_models",
+                            help="Whether to use 'best' model additionally as attack input. Possible values: ['yes', "
+                                 "'true', 't', 'y', '1'] and ['no', 'false', 'f', 'n', '0']", type=str2bool,
+                            default="no")
+        parser.add_argument("--intermediate_models",
+                            help="Whether to use intermediate models of 'best' model additionally as attack input. "
+                                 "Possible values: ['yes', 'true', 't', 'y', '1'] and ['no', 'false', 'f', 'n', '0']",
+                            type=str2bool, default="no")
         parser.parse_known_args(namespace=self)
