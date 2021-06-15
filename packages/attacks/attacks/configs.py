@@ -101,7 +101,15 @@ class MultiModelTrunkActivationAttackConfig:
         parser.add_argument("--num_models", help="Number of compute plans to train for an attack.", type=int, default=3)
         parser.add_argument("--num_samples", help="Number of member and non-member samples that the attacker collects "
                                                   "for training and evaluating her attack.", type=int, default=500)
-        parser.add_argument("--num_epochs", help="Number of epochs that the attacker trains for.", type=int, default=300)
+        parser.add_argument("--attack_type", help="Type of attacker model. Possible values: 'nn' - neural network, "
+                                                  "'rf' - random forest or 'gb' - gradient boosting.", type=str,
+                            choices=["nn", "rf", "gb"], default="nn")
+        parser.add_argument("--num_epochs", help="Number of epochs that the attacker trains for (if attacker type is "
+                                                 "nn).", type=int, default=300)
+        parser.add_argument("--n_estimators",
+                            help="Number of estimators used to train the RandomForestModel or the "
+                                 "GradientBoostingClassifier. Default is 100.", type=int,
+                            default=100)
         parser.add_argument("--best_models",
                             help="Whether to use 'best' model additionally as attack input. Possible values: ['yes', "
                                  "'true', 't', 'y', '1'] and ['no', 'false', 'f', 'n', '0']", type=str2bool,

@@ -7,7 +7,7 @@ from collaborative.participant import Client
 from collaborative.participant import Server
 from collaborative.model import Trunk
 from tqdm import tqdm
-from sklearn.ensemble import RandomForestClassifier
+from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import confusion_matrix, recall_score, precision_score, accuracy_score
 import numpy as np
@@ -562,14 +562,36 @@ class MultiModelTrunkActivationAttack(TrunkActivationAttack):
         # concatenate
         trunk_outputs = np.concatenate(trunk_outputs, axis=1)
         X_train, X_test, y_train, y_test = train_test_split(trunk_outputs, membership, test_size=0.33, random_state=42)
-        train_dataset = TensorDataset(torch.from_numpy(X_train).float(), torch.unsqueeze(torch.from_numpy(y_train).float(), dim=1))
-        test_dataset = TensorDataset(torch.from_numpy(X_test).float(), torch.unsqueeze(torch.from_numpy(y_test).float(), dim=1))
+
+        attack_type = self.attack_config.attack_type
+        if attack_type == "nn":
+            y_pred, y_test = self._neural_network_attack(X_train, X_test, y_train, y_test)
+        elif attack_type == "rf":
+            atk = RandomForestClassifier()
+            atk.fit(X_train, y_train)
+            y_pred = atk.predict(X_test)
+        elif attack_type == "gb":
+            atk = GradientBoostingClassifier()
+            atk.fit(X_train, y_train)
+            y_pred = atk.predict(X_test)
+
+        # self._evaluate_model(clients)
+        self._evaluate_attack(y_pred, y_test)
+
+        print("Attack results:")
+        print(self.results_dict)
+
+    def _neural_network_attack(self, X_train, X_test, y_train, y_test):
+        train_dataset = TensorDataset(torch.from_numpy(X_train).float(),
+                                      torch.unsqueeze(torch.from_numpy(y_train).float(), dim=1))
+        test_dataset = TensorDataset(torch.from_numpy(X_test).float(),
+                                     torch.unsqueeze(torch.from_numpy(y_test).float(), dim=1))
         train_data_loader = DataLoader(train_dataset, batch_size=32)
         test_data_loader = DataLoader(test_dataset, batch_size=32)
 
         # ... and run through attack
         model = nn.Sequential(
-            nn.Linear(in_features=trunk_outputs.shape[1], out_features=1024),
+            nn.Linear(in_features=X_train.shape[1], out_features=1024),
             nn.Dropout(p=0.2),
             nn.ReLU(),
             nn.Linear(in_features=1024, out_features=256),
@@ -599,8 +621,4 @@ class MultiModelTrunkActivationAttack(TrunkActivationAttack):
             y_pred.extend(pred)
             y_test.extend(y)
 
-        # self._evaluate_model(clients)
-        self._evaluate_attack(y_pred, y_test)
-
-        print("Attack results:")
-        print(self.results_dict)
+        return y_pred, y_test
