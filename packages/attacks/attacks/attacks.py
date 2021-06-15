@@ -72,11 +72,8 @@ class BaseAttack:
             return CompressionMethods.QUANTIZATION
 
     def _initialize_and_train_targeted_model(self, save_intermediate=False):
-        if self.load_saved_model:
-            print("Load model config")
-            self._load_model_config()
-        trunk, server = self._initialize_server()
-        clients = self._initialize_clients(trunk)
+        trunk, server, clients = self._initialize_targeted_model()
+
         if self.compress:
             self._register_compression(trunk.parameters(), clients)
 
@@ -86,6 +83,14 @@ class BaseAttack:
             self._train_targeted_model(clients=clients, server=server, rounds=rounds, save_intermediate=save_intermediate)
             if self.model_save:
                 self._save_models(server, clients)
+
+        return trunk, server, clients
+
+    def _initialize_targeted_model(self, filename="model.pkl"):
+        if self.load_saved_model:
+            self._load_model_config()
+        trunk, server = self._initialize_server(filename)
+        clients = self._initialize_clients(trunk, filename)
 
         return trunk, server, clients
 
@@ -108,11 +113,11 @@ class BaseAttack:
         for client in clients:
             client.register_train(subscriber=self.compressor)
 
-    def _initialize_server(self):
+    def _initialize_server(self, filename="model.pkl"):
         trunk = Trunk(self.model_config)
         server = Server(trunk, conf=self.model_config)
         if self.load_saved_model:
-            server.load_model(path.join(self.save_path, "server"))
+            server.load_model(path.join(self.save_path, "server"), filename)
         return trunk, server
 
     def _load_model_config(self):
@@ -120,24 +125,22 @@ class BaseAttack:
             attr_dict = json.load(f)
             self.model_config.__dict__.update(attr_dict)
 
-    def _initialize_clients(self, trunk):
+    def _initialize_clients(self, trunk, filename="model.pkl"):
         partner_data = du.load_partner_data("data", range(10))
         clients = []
         for i, (x, y) in enumerate(partner_data):
             self.model_config.output_size = y.shape[1]
             self.model_config.batch_size = int(x.shape[0] * self.model_config.batch_ratio)
             model = TrunkAndHead(trunk, self.model_config)
-            print("Model of %d. partner" % i)
-            print(model)
             dataset = sc.SparseDataset(x, y)
             client = Client(model, conf=self.model_config, dataset=dataset)
             if self.load_saved_model:
-                client.load_model(path.join(self.save_path, str(i)))
+                client.load_model(path.join(self.save_path, str(i)), filename)
             clients.append(client)
         return clients
 
     def _train_targeted_model(self, clients, server, rounds, save_intermediate=False):
-        for r in tqdm(range(rounds)):
+        for r in tqdm(range(1, rounds+1)):
             self._train_clients(clients)
             if self.compress:
                 self.compressor.compress_and_set()
@@ -146,8 +149,9 @@ class BaseAttack:
             # server zeroes his trunk
             server.zero_grad()
 
-            if save_intermediate and r % 20 == 0:  # save after every epoch
-                self._save_models(server, clients, filename="model_%d.pkl" % r//20)
+            rounds_in_epoch = int(1 / self.model_config.batch_ratio)
+            if save_intermediate and r % rounds_in_epoch == 0:  # save after every epoch
+                self._save_models(server, clients, filename="model_%d.pkl" % (r//rounds_in_epoch))
 
 
     def _train_clients(self, clients, compress=False):
@@ -502,12 +506,42 @@ class MultiModelTrunkActivationAttack(TrunkActivationAttack):
         save_intermediate_models = self.attack_config.best_models or self.attack_config.intermediate_models
         attacked_trunks = []
         # train CP models
-        for r in range(self.attack_config.num_models):
+        for r in range(1, self.attack_config.num_models+1):
             self.model_config.lr = np.round_(np.random.random() / 10, 5)  # select random learning rate
-            self.save_path = path.join(base_save_path, "CP_%d" % (r+1))  # change save path
+            self.save_path = path.join(base_save_path, "CP_%d" % r)  # change save path
             trunk, server, clients = self._initialize_and_train_targeted_model(save_intermediate=save_intermediate_models)
             attacked_trunks.append(trunk)
-        del self.model_config.lr  # delete so lr won't be logged (only latest lr would be logged)
+
+        if self.attack_config.best_models:
+            num_epochs = self.model_config.rounds // int(1 / self.model_config.batch_ratio)
+            random_client = np.random.choice(10)
+            print("Selection of best model based on %d. client's auc_pr." % random_client)
+            best_CP = 1
+            best_epoch = 1
+            best_auc_pr = 0.0
+            # find best CP, best epoch
+            for cp in range(1, self.attack_config.num_models+1):
+                self.save_path = path.join(base_save_path, "CP_%d" % cp)  # change save path
+                for e in range(1, num_epochs+1):
+                    filename = "model_%d.pkl" % e
+                    trunk, server, clients = self._initialize_targeted_model(filename)
+                    client = clients[random_client]
+                    _, auc_pr = client.eval(on_train=True)
+                    if auc_pr > best_auc_pr:
+                        best_CP = cp
+                        best_epoch = e
+            print("Best model is in CP_%d, epoch %d." % (best_CP, best_epoch))
+            self.save_path = path.join(base_save_path, "CP_%d" % best_CP)  # change save path
+            filename = "model_%d.pkl" % best_epoch
+            trunk, server, clients = self._initialize_targeted_model(filename)
+            attacked_trunks.append(trunk)  # add trunk to attacked trunks
+
+            if self.attack_config.intermediate_models:
+                # load trunks from every 2 epochs
+                for e in range(1, num_epochs+1, 2):
+                    filename = "model_%d.pkl" % e
+                    trunk, server, clients = self._initialize_targeted_model(filename)
+                    attacked_trunks.append(trunk)  # add them to attacked trunks
 
         # collect trunk outputs on member and non-member data
         x_member, _, x_non_member, _ = du.load_member_non_member_data("data", range(10))
@@ -522,6 +556,8 @@ class MultiModelTrunkActivationAttack(TrunkActivationAttack):
             X = np.vstack([activations["member"][:len(activations["non-member"])], activations["non-member"]])
             membership = np.array([1] * activations["non-member"].shape[0] + [0] * activations["non-member"].shape[0])
             trunk_outputs.append(X)
+
+        del self.model_config.lr  # delete so lr won't be logged (only latest lr would be logged)
 
         # concatenate
         trunk_outputs = np.concatenate(trunk_outputs, axis=1)
