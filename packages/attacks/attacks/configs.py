@@ -118,4 +118,8 @@ class MultiModelTrunkActivationAttackConfig:
                             help="Whether to use intermediate models of 'best' model additionally as attack input. "
                                  "Possible values: ['yes', 'true', 't', 'y', '1'] and ['no', 'false', 'f', 'n', '0']",
                             type=str2bool, default="no")
+        parser.add_argument("--attacked_epochs", nargs="+", help="Sequence of attacked epochs for each compute plan. "
+                                                                 "If set, this option overrides the default attack, "
+                                                                 "where only the last epoch is attacked.",
+                            default=None, type=int)
         parser.parse_known_args(namespace=self)

@@ -509,7 +509,13 @@ class MultiModelTrunkActivationAttack(TrunkActivationAttack):
             self.model_config.lr = np.round_(np.random.random() / 10, 5)  # select random learning rate
             self.save_path = path.join(base_save_path, "CP_%d" % r)  # change save path
             trunk, server, clients = self._initialize_and_train_targeted_model(save_intermediate=True)
-            attacked_trunks.append(trunk)
+            if not self.attack_config.attacked_epochs:
+                attacked_trunks.append(trunk)
+            else:
+                for e in self.attack_config.attacked_epochs:
+                    filename = "model_%d.pkl" % e
+                    trunk, server, clients = self._initialize_targeted_model(filename)
+                    attacked_trunks.append(trunk)
 
         if self.attack_config.best_models:
             num_epochs = self.model_config.rounds // int(1 / self.model_config.batch_ratio)
