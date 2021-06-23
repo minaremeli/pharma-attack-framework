@@ -1,6 +1,8 @@
 # attack framework
 This is a framework for running attacks on sparsechem models.
 
+[[_TOC_]]
+
 ## Setup
 1. Enter the `data/` directory and extract all files.
    Find further instructions there.
