@@ -12,7 +12,7 @@ This is a framework for running attacks on sparsechem models.
 ### Required parameters
 Some parameters that need to be set in order to run an attack.
 
-* `--attack_name`: This specifies which attack to run. Values can be: `[NGMA, TrunkActivation, NOATTACK, Leaving, ActiveTrunkActivation]`.
+* `--attack_name`: This specifies which attack to run. Values can be: `[NGMA, TrunkActivation, NOATTACK, Leaving, ActiveTrunkActivation, MMTrunkActivation]`.
 `NOATTACK` is a special setting where we don't run any attacks.
   
 * `--results_file`: Name of the .csv file you want to save your results in.
@@ -123,3 +123,24 @@ This is performed with a binomial test with significance threshold of 5%.
   Any value over the 5% significance threshold means that there was no significant difference between them.
 
 
+### Multi-Model Trunk Activation Attack
+This is a Trunk Activation attack which is performed on the trunk outputs of multiple models simultaneously.
+Each model (or CP - Compute Plan) is distinct. 
+The learning rate for each CP is randomly generated (a number which is at most 0.1).
+By default the adversary attacks the model from the last epoch of each CP.
+
+#### Parameters
+* `--num_models`: Number of compute plans to train for an attack.
+* `--num_samples`: Number of member and non-member samples that the attacker collects for training and evaluating her attack. Default is 500.
+* `--attack_type`: Type of attacker model. Possible values: `nn` - neural network, `rf` - random forest or `gb` - gradient boosting. Default value is 'rf'.
+* `--num_epochs`: Number of epochs that the attacker trains for (if attacker type is `nn`).
+* `--n_estimators`: Number of estimators used to train the RandomForestModel. Default is 100.
+* `--best_models`: Whether to use 'best' model additionally as attack input. Possible values: `['yes', 'true', 't', 'y', '1']` and `['no', 'false', 'f', 'n', '0']`.
+* `--intermediate_models`: Whether to use intermediate models of 'best' model additionally as attack input. Possible values: `['yes', 'true', 't', 'y', '1']` and `['no', 'false', 'f', 'n', '0']`.
+* `--attacked_epochs`: Sequence of attacked epochs for each compute plan. If set, this option overrides the default attack, where only the last epoch is attacked. Default value is `None`.
+
+#### Evaluation
+* TP, FP, TN, FN
+* accuracy
+* precision
+* recall
