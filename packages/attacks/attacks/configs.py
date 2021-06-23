@@ -103,7 +103,7 @@ class MultiModelTrunkActivationAttackConfig:
                                                   "for training and evaluating her attack.", type=int, default=500)
         parser.add_argument("--attack_type", help="Type of attacker model. Possible values: 'nn' - neural network, "
                                                   "'rf' - random forest or 'gb' - gradient boosting.", type=str,
-                            choices=["nn", "rf", "gb"], default="nn")
+                            choices=["nn", "rf", "gb"], default="rf")
         parser.add_argument("--num_epochs", help="Number of epochs that the attacker trains for (if attacker type is "
                                                  "nn).", type=int, default=300)
         parser.add_argument("--n_estimators",
